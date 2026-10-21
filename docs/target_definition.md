@@ -1,83 +1,59 @@
-# Target Definition & Leakage Mitigation Agreement (Section 5.2)
+# Target definition and leakage handling
 
-- **Project:** Surface Water Quality Modeling & Prediction
-- **Data Lead:** Sarthak
-- **Modeling Lead:** Priyal
-- **Dataset:** Ireland Regional Subset (`data/raw/Ireland_dataset.csv`)
-- **Total Records:** 235,019 observations across 14 raw columns
-- **Date:** Wednesday, 21 October 2026
+- **Dataset:** Comprehensive Surface Water Quality Monitoring Dataset 1940–2023 (the dataset linked in the project brief), file `Combined_dataset.csv`
+- **Processed file:** `data/processed/final_dataset.csv` (259,774 rows, 9,940 sites, 2000–2023; England, Ireland, USA, Canada)
+- **Task:** regression
+- **Target column:** `target_ccme_value` (CCME Water Quality Index, 0–100, higher = better water)
+- **Metrics:** MAE, RMSE and R² (as the brief asks for a continuous target)
+- **Main split:** by monitoring station, `split` column: train / val / test = 70% / 10% / 20% of rows (stations shuffled with seed 42 and dealt out until each share is reached; no station is in two sets). Validation is for tuning and early stopping; the test set is used once
+- **Secondary split:** by year, `split_time` column: train up to 2015 (71%), validation 2016–2017 (8%), test 2018 onwards (20%); years cannot be cut to exact percentages
 
----
+## 1. The target
 
-## 1. Target Variable Specifications & Distributions
+The dataset authors computed the Canadian Council of Ministers of the Environment (CCME) index from 8 parameters: ammonia, BOD, dissolved oxygen, orthophosphate, pH, temperature, nitrogen and nitrate. We predict the numeric index (`target_ccme_value`). The class label (`target_ccme_class`) is made from the same number, so it is never used as an input, and we do not classify (the brief asks for macro F1 and calibration for classes, and the bad classes are rare).
 
-The selected dataset provides both continuous and categorical representations of the Canadian Council of Ministers of the Environment (CCME) Water Quality Index (WQI).
+| Statistic | Value |
+|---|---|
+| Rows | 259,774 |
+| Mean / std | 90.2 / 12.9 |
+| Median | 93.1 |
+| Share exactly 100 | 43.7% (England 29%, Ireland 82%, USA 46%, Canada 35%) |
+| Classes | Excellent 43.7%, Good 39.9%, Fair 9.6%, Marginal 6.1%, Poor 0.8% |
 
-### 1.1 Continuous Target (Regression): `CCME_Values`
-The continuous index scores range on a standard scale from 0 to 100, where higher values denote superior water quality.
-- **Count:** 235,019
-- **Mean:** 98.11
-- **Standard Deviation:** 6.41
-- **Min:** 37.19
-- **25th Percentile:** 100.00
-- **Median (50th Percentile):** 100.00
-- **75th Percentile:** 100.00
-- **Max:** 100.00
-- **Distribution Insight:** Over 75% of all historical monitoring observations in Ireland exhibit an upper-bound score of 100.00 (pristine water meeting all statutory thresholds). Models evaluated with standard Mean Squared Error (MSE) risk predicting near 100 everywhere.
+Because 44% of the target sits at the ceiling of 100, R² and RMSE are reported next to MAE and per country.
 
-### 1.2 Categorical Target (Classification): `CCME_WQI`
-The regulatory quality tier derived from the underlying CCME score:
-- **Excellent:** 84.24% (197,980 samples)
-- **Good:** 14.07% (33,067 samples)
-- **Fair:** 0.69% (1,622 samples)
-- **Poor:** 0.61% (1,434 samples)
-- **Marginal:** 0.39% (916 samples)
+## 2. Why the models cannot see all 8 parameters (leakage)
 
-### 1.3 Modeling Guidance for Priyal & Anusha
-- **Severe Class Imbalance:** Clean classes (`Excellent` + `Good`) account for 98.31% of data. The three degraded tiers (`Fair`, `Marginal`, `Poor`) comprise only 1.69% combined.
-- **Evaluation Metric Constraint:** Raw classification accuracy is an invalid benchmark (a naive majority classifier achieves 84.24% accuracy with 0% recall on contaminated water). Models must be evaluated using **Macro F1-Score**, **Balanced Accuracy**, and **Precision-Recall AUC (PR-AUC)**.
-- **Recommended Classification Formulations:**
-  1. *Binary Reformulation (Primary):* Group classes into `Pristine / Excellent` (84.24%) vs. `Impacted / Below-Excellent` (15.76%). This provides a viable operational classification boundary that can be easily balanced via `class_weight='balanced'`.
-  2. *Multi-Class Alternative:* 5-tier classification utilizing cost-sensitive learning or synthetic minority oversampling (SMOTE) on train folds only.
+The brief says: *do not derive a target index from the same components without acknowledging leakage.* Our test (`notebooks/03_features.ipynb`, section 2; trained on train rows, scored on the validation rows of the station split, so the test set stays untouched):
 
----
+| Inputs given to the model | R² |
+|---|---|
+| All 8 parameters | 0.991 |
+| Original proposal (pH, temperature, ammonia, orthophosphate, nitrogen + type) | 0.982 |
+| Dissolved oxygen, pH, temperature only | 0.127 |
+| + context (type, country, month) | 0.268 |
+| + engineered features and site history **(chosen)** | 0.343 |
+| Mean-predictor baseline | -0.005 |
 
-## 2. Zero-Leakage Parameter Partitioning Plan
+An R² of 0.98 means the model re-learned the formula, not that it predicts well. Each parameter alone: orthophosphate 0.935, ammonia 0.367, nitrogen 0.285, BOD 0.179, nitrate 0.175, but dissolved oxygen 0.040, temperature 0.039 and pH 0.013.
 
-### The Core Problem (Section 5.2 Protocol)
-Because `CCME_Values` is calculated using a deterministic environmental index formula derived from physicochemical concentrations, passing all 8 parameters into feature matrix $X$ would result in complete mathematical formula leakage. Models would merely perform algebraic curve-fitting rather than learning genuine environmental relationships.
+## 3. Column roles
 
-To satisfy Section 5.2 (Option B), the 8 monitored parameters are partitioned into strictly non-overlapping subsets:
+| Columns | Role |
+|---|---|
+| `dissolved_oxygen_mg_l`, `ph`, `temperature_c` | **Model inputs** (the sensors the brief names; they explain very little of the index alone) |
+| `ammonia_mg_l`, `bod_mg_l`, `orthophosphate_mg_l`, `nitrogen_mg_l`, `nitrate_mg_l` | **Held out of the models**; kept in the file for EDA only |
+| `waterbody_type`, `country`, `month` | Context inputs |
+| Engineered: month sin/cos, DO saturation %, DO × temperature, running mean of the site's earlier sensor readings, number of earlier samples, days since the previous sample | Inputs (built in `src/features.py`) |
+| `site_id`, `date` | Grouping and ordering only, never inputs |
+| `target_ccme_value`, `target_ccme_class`, `n_genuine_params`, `split`, `split_time` | Never inputs |
 
-| Column Name | Assigned Pipeline Role | Justification |
-| :--- | :--- | :--- |
-| `CCME_Values` | **Target ($y_{\text{reg}}$)** | Continuous regression target (0–100). |
-| `CCME_WQI` | **Target ($y_{\text{clf}}$)** | Categorical classification target. |
-| `Biochemical Oxygen Demand (mg/l)` | **EXCLUDED (Dropped from $X$)** | Core driver of CCME organic violation scores; omitted to prevent direct equation inversion. |
-| `Dissolved Oxygen (mg/l)` | **EXCLUDED (Dropped from $X$)** | Primary aquatic survival metric; omitted to prevent direct equation inversion. |
-| `Nitrate (mg/l)` | **EXCLUDED (Dropped from $X$)** | Key nutrient violation metric; omitted to prevent direct equation inversion. |
-| `pH (ph units)` | **Feature ($X$)** | Acid-base balance; standard ambient physicochemical input. |
-| `Temperature (cel)` | **Feature ($X$)** | Thermal regime and seasonal physical proxy. |
-| `Ammonia (mg/l)` | **Feature ($X$)** | Agricultural runoff and waste indicator. |
-| `Orthophosphate (mg/l)` | **Feature ($X$)** | Bioavailable phosphorus nutrient proxy. |
-| `Nitrogen (mg/l)` | **Feature ($X$)** | Total nitrogen organic/inorganic nutrient balance. |
-| `Waterbody Type` | **Feature ($X$)** | Environmental context (River, Lake, Transitional, Coastal); one-hot encoded. |
-| `Date` | **Temporal Feature Generator** | Used in `src/features.py` to derive cyclical features (`month_sin`, `month_cos`) and season. |
-| `Area` | **Grouping Key ONLY** | Contains 9,737 unique station IDs; reserved exclusively for `GroupShuffleSplit` across folds. Strictly excluded from $X$. |
-| `Country` | **Metadata (Dropped)** | Uniform constant (`Ireland`), dropped during data cleaning. |
+## 4. Statement for the report
 
----
+> To avoid direct leakage from the CCME index formula, the five parameters that drive it most (ammonia, BOD, orthophosphate, total nitrogen and nitrate) are excluded from the model inputs. Models predict the index from dissolved oxygen, pH and temperature, the sensor readings named in the project brief, plus water type, country, season and each site's earlier readings. Dissolved oxygen, pH and temperature are still ingredients of the index, so some dependence remains; each explains very little of it on its own (R² ≤ 0.05), and the reduction in score from 0.99 to about 0.3 shows the formula is no longer recoverable.
 
-## 3. Mandatory Leakage Acknowledgment Statement (For Final Report)
+## 5. Other things to state honestly
 
-> *"To prevent direct algebraic target leakage from the Canadian Council of Ministers of the Environment (CCME) Water Quality Index calculation, parameters heavily driving the target formulation—specifically Biochemical Oxygen Demand (BOD), Dissolved Oxygen (DO), and Nitrate—are strictly excluded from the predictive feature matrix $X$. Models predict overall water quality index scores strictly from secondary physicochemical proxies (pH, Temperature, Ammonia, Orthophosphate, Nitrogen), waterbody classification, and seasonal indicators derived from sampling dates. While direct mathematical formula leakage is eliminated, residual indirect correlation remains due to natural hydro-chemical coupling across environmental variables (e.g., oxygen solubility inversely scaling with water temperature)."*
-
----
-
-## 4. Train-Test Split Protocol (Scheduled for Thursday 22 Oct)
-
-- **Strategy:** Station-level grouped validation (`GroupShuffleSplit`).
-- **Grouping Column:** `Area` (9,737 unique monitoring stations).
-- **Split Ratio:** 80% Train, 20% Test (`test_size=0.20`, `random_state=42`).
-- **Guarantee:** No monitoring station appearing in the training set will appear in the test set, ensuring models are evaluated on spatial generalizability to unseen geographical sites.
-- **Output Artifacts:** Stored in `data/processed/clean.csv` and `data/processed/split_indices.json`.
+- **Filled-in source values.** The dataset authors filled gaps with one repeated value per country and water type (for example dissolved oxygen 10.2 in England). We set these to NaN (details in `docs/cleaning_log.md`). The authors computed the index after filling, so part of the target's variation comes from those fillers.
+- **Modest scores.** About 0.3 R² is the honest ceiling with three sensors.
+- **Time split.** The three sensors alone do not carry over to later years (validation R² about −0.04); the chosen set does (about 0.34). We report both splits.

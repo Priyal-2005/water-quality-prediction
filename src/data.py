@@ -1,16 +1,18 @@
 """
 src/data.py
-Reusable data loading, cleaning, domain validation, and station-based splitting.
+Reusable data loading, cleaning, domain validation and station-based splitting.
+
+Pipeline (see section 8): data/raw/Combined_dataset.csv  ->  build_final_dataset()
+ -> data/processed/final_dataset.csv, the single processed file used by everyone.
 
 Features:
-- Safe raw-data loading and column-name standardization
-- Complete alias mapping for Ireland (Plan A) and Cork Harbour (Plan B) schemas
-- Robust date and numeric parsing
-- Left-censored detection-limit handling (<X -> 0.5 * X + binary BDL flag)
-- Duplicate auditing with reproducible logs
-- Physical-domain validation without deleting complete rows
-- Leakage-resistant station-based train/test splitting (GroupShuffleSplit)
-- Explicit validation of missing identifiers and invalid inputs
+- Chunked loading of the large combined file, filtered to chosen countries
+- Surface-water filter (drops effluent / sewage / drainage)
+- Detection of placeholder (filled-in) values per country x water type
+- Physical-domain validation without deleting whole rows
+- Exact-duplicate removal with a reproducible log
+- Whole-site sampling to keep the output GitHub-sized
+- Leakage-resistant station split (GroupShuffleSplit) plus a time split
 """
 
 from __future__ import annotations
@@ -614,3 +616,373 @@ def generate_station_split(
         raise RuntimeError("The generated split contains an empty partition.")
 
     return train_idx.tolist(), test_idx.tolist()
+
+
+def generate_station_split_3way(
+    df: pd.DataFrame,
+    group_col: str = "site_id",
+    fractions: tuple[float, float, float] = (0.70, 0.10, 0.20),
+    seed: int = 42,
+) -> tuple[list[int], list[int], list[int]]:
+    """
+    Split rows into train / val / test by group (station) so that the shares of
+    ROWS are as close as possible to `fractions` and no station is in two sets.
+
+    Stations are shuffled (seed) and dealt out in order until the train share of rows
+    is reached, then the val share, and the rest is test. Returns positional indices
+    (for df.iloc).
+    """
+    if abs(sum(fractions) - 1.0) > 1e-9:
+        raise ValueError("fractions must sum to 1.")
+    if df[group_col].isna().any():
+        raise ValueError(f"Column '{group_col}' contains missing group IDs.")
+    sizes = df.groupby(group_col).size()
+    order = np.random.default_rng(seed).permutation(sizes.index.to_numpy())
+    cum = sizes.loc[order].cumsum().to_numpy() / len(df)
+    train_end = fractions[0]
+    val_end = fractions[0] + fractions[1]
+    which = np.where(cum <= train_end, 0, np.where(cum <= val_end, 1, 2))
+    assignment = dict(zip(order, which))
+    codes = df[group_col].map(assignment).to_numpy()
+    parts = [np.flatnonzero(codes == k).tolist() for k in range(3)]
+    if any(len(p) == 0 for p in parts):
+        raise RuntimeError("A partition is empty.")
+    sets = [set(df.iloc[p][group_col]) for p in parts]
+    if (sets[0] & sets[1]) or (sets[0] & sets[2]) or (sets[1] & sets[2]):
+        raise RuntimeError("Group leakage detected between partitions.")
+    return parts[0], parts[1], parts[2]
+
+
+# ============================================================
+# 8. FINAL DATASET PIPELINE (Combined_dataset.csv -> final_dataset.csv)
+# ============================================================
+# Everything below turns the raw combined file into the single
+# data/processed/final_dataset.csv that the whole team uses.
+# Findings that drive these steps (see docs/cleaning_log.md):
+#   * The source file has one row per sample but many values are NOT real
+#     measurements: for each (country, water type) the authors filled
+#     missing parameters with one repeated value (e.g. BOD = 2.7 for 44% of
+#     England rows). We detect these placeholders and set them to NaN.
+#   * ~28% of England rows are effluent / sewage / drainage water, not
+#     surface water.
+#   * The target (CCME index) is computed from the same 8 parameters, so the
+#     model must NOT be given all 8 (see docs/target_definition.md).
+
+PARAM_COLS = [
+    "ammonia_mg_l",
+    "bod_mg_l",
+    "dissolved_oxygen_mg_l",
+    "orthophosphate_mg_l",
+    "ph",
+    "temperature_c",
+    "nitrogen_mg_l",
+    "nitrate_mg_l",
+]
+
+# The only measured inputs the models are allowed to use (leakage control).
+SENSOR_COLS = ["dissolved_oxygen_mg_l", "ph", "temperature_c"]
+
+DEFAULT_COUNTRIES = ("England", "USA", "Ireland", "Canada")
+
+# Rows per country kept in final_dataset.csv (None = keep all that pass the
+# quality filters). Whole monitoring sites are sampled, never single rows.
+DEFAULT_COUNTRY_CAPS = {
+    "England": 180_000,
+    "Ireland": 70_000,
+    "USA": None,
+    "Canada": None,
+}
+
+NON_SURFACE_TYPES = ("Effluent", "Sewage", "Drainage")
+
+WATERBODY_GROUPS = {
+    "River": "River",
+    "Lake": "Lake",
+    "Canal": "Canal",
+    "Estuarine": "Estuarine/Transitional",
+    "Transitional": "Estuarine/Transitional",
+    "Sea Water": "Marine/Coastal",
+    "Marine": "Marine/Coastal",
+    "Coastal": "Marine/Coastal",
+}
+
+MIN_YEAR = 2000
+
+PHYSICAL_RULES = {
+    "ph": (0.0, 14.0, "Outside the physical pH scale; instrument error"),
+    "temperature_c": (-5.0, 40.0, "Surface water outside -5..40 C is a unit error (e.g. Fahrenheit) or a fault"),
+    "dissolved_oxygen_mg_l": (0.0, 25.0, "Above ~25 mg/L is not physically possible in surface water"),
+    "bod_mg_l": (0.0, 150.0, "Above 150 mg/L looks like effluent, not surface water"),
+    "ammonia_mg_l": (0.0, 100.0, "Negative or extreme concentrations are errors"),
+    "orthophosphate_mg_l": (0.0, 50.0, "Negative or extreme concentrations are errors"),
+    "nitrogen_mg_l": (0.0, 200.0, "Negative or extreme concentrations are errors"),
+    "nitrate_mg_l": (0.0, 200.0, "Negative or extreme concentrations are errors"),
+}
+
+
+def load_combined_for_countries(
+    path: str,
+    countries: Sequence[str] = DEFAULT_COUNTRIES,
+    chunksize: int = 500_000,
+) -> pd.DataFrame:
+    """Read the large combined CSV in chunks, keeping only the chosen countries."""
+    path = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Combined dataset not found at: {path}")
+    parts = []
+    for chunk in pd.read_csv(path, chunksize=chunksize, low_memory=False):
+        parts.append(chunk[chunk["Country"].isin(countries)])
+    df = pd.concat(parts, ignore_index=True)
+    if df.empty:
+        raise ValueError(f"No rows found for countries {list(countries)}.")
+    return df
+
+
+def detect_placeholder_values(
+    df: pd.DataFrame,
+    cols: Sequence[str] = PARAM_COLS,
+    group_cols: Sequence[str] = ("country", "waterbody_type"),
+    min_share: float = 0.05,
+    dominance: float = 2.5,
+    max_passes: int = 3,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Find values that are repeated placeholders rather than measurements.
+
+    Within each group (country x water type) and parameter, the most common
+    value is flagged when it makes up at least `min_share` of the group's
+    remaining values AND is at least `dominance` times more common than the
+    second most common value. The check is repeated (up to `max_passes`) on the
+    values that are left, because some groups contain more than one filler.
+    Natural rounding peaks (e.g. pH 7.8 at 9% vs 8% for 7.9) are not flagged.
+
+    Returns (mask, audit): a boolean frame (True = placeholder) and a table
+    listing every flagged (group, parameter, pass, value, share).
+    """
+    if not df.index.is_unique:
+        raise ValueError("df index must be unique; call reset_index(drop=True) first.")
+
+    mask = pd.DataFrame(False, index=df.index, columns=list(cols))
+    audit_rows: list[dict[str, Any]] = []
+
+    for keys, grp in df.groupby(list(group_cols), observed=True):
+        keys = keys if isinstance(keys, tuple) else (keys,)
+        for col in cols:
+            values = grp[col].round(6)
+            for pass_no in range(1, max_passes + 1):
+                shares = values.value_counts(normalize=True)
+                if shares.empty:
+                    break
+                top_value, top_share = shares.index[0], float(shares.iloc[0])
+                second_share = float(shares.iloc[1]) if len(shares) > 1 else 0.0
+                if not (top_share >= min_share and top_share >= dominance * second_share):
+                    break
+                hit = values == top_value
+                mask.loc[hit[hit].index, col] = True
+                audit_rows.append(
+                    dict(
+                        zip(group_cols, keys),
+                        parameter=col,
+                        pass_no=pass_no,
+                        placeholder_value=float(top_value),
+                        share_of_remaining_pct=round(100 * top_share, 1),
+                        rows_flagged=int(hit.sum()),
+                    )
+                )
+                values = values.where(~hit)
+
+    return mask, pd.DataFrame(audit_rows)
+
+
+def sample_sites_with_caps(
+    df: pd.DataFrame,
+    caps: Mapping[str, int | None],
+    site_col: str = "site_id",
+    country_col: str = "country",
+    seed: int = 42,
+) -> pd.DataFrame:
+    """
+    Keep whole monitoring sites, in random order, until each country's row cap
+    is reached. Sampling sites (not rows) keeps every kept station's full history.
+    """
+    rng = np.random.default_rng(seed)
+    kept = []
+    for country, grp in df.groupby(country_col):
+        cap = caps.get(country)
+        if cap is None or len(grp) <= cap:
+            kept.append(grp)
+            continue
+        sizes = grp.groupby(site_col).size()
+        order = rng.permutation(sizes.index.to_numpy())
+        cum = sizes.loc[order].cumsum()
+        n_sites = int((cum < cap).sum()) + 1
+        chosen = set(order[:n_sites])
+        kept.append(grp[grp[site_col].isin(chosen)])
+    return pd.concat(kept).sort_index()
+
+
+def build_final_dataset(
+    raw_path: str,
+    out_path: str,
+    countries: Sequence[str] = DEFAULT_COUNTRIES,
+    caps: Mapping[str, int | None] = DEFAULT_COUNTRY_CAPS,
+    min_genuine_params: int = 5,
+    min_genuine_sensors: int = 2,
+    test_size: float = 0.20,
+    val_size: float = 0.10,
+    time_cutoff_year: int = 2017,
+    time_val_start_year: int = 2016,
+    seed: int = 42,
+) -> tuple[pd.DataFrame, list[dict[str, Any]], pd.DataFrame]:
+    """
+    Raw combined file -> one cleaned, split, model-ready CSV.
+
+    Returns (final_df, cleaning_log, placeholder_audit).
+    """
+    log: list[dict[str, Any]] = []
+
+    # 1. Load only the chosen countries
+    df = clean_column_names(load_combined_for_countries(raw_path, countries))
+    per_country = df["country"].value_counts().to_dict()
+    log.append(_log_entry(
+        "Rows loaded for the chosen countries",
+        f"{len(df):,} " + str({k: int(v) for k, v in per_country.items()}),
+        f"Kept countries {list(countries)} from Combined_dataset.csv",
+        "Other countries are not used (China has a single site, so no site split is possible).",
+    ))
+
+    # 2. Parse dates
+    df["date"] = pd.to_datetime(df["date"], format="%d-%m-%Y", errors="coerce")
+    bad_dates = int(df["date"].isna().sum())
+    df = df.dropna(subset=["date"]).reset_index(drop=True)
+    log.append(_log_entry("Unparseable dates (dd-mm-yyyy)", bad_dates,
+                          "Dropped rows" if bad_dates else "None found",
+                          "Date is needed for the time split and seasonal features."))
+
+    # 3. Surface water only
+    non_surface = df["waterbody_type"].isin(NON_SURFACE_TYPES)
+    by_type = df.loc[non_surface, "waterbody_type"].value_counts().to_dict()
+    df = df.loc[~non_surface].reset_index(drop=True)
+    log.append(_log_entry(
+        "Non-surface water types (effluent, sewage, drainage)",
+        f"{int(non_surface.sum()):,} {by_type}",
+        "Dropped rows",
+        "The task is surface-water quality; effluent/sewage has a different chemistry and was ~28% of England.",
+    ))
+
+    # 4. Modern records only
+    old = df["date"].dt.year < MIN_YEAR
+    df = df.loc[~old].reset_index(drop=True)
+    log.append(_log_entry(
+        f"Records before {MIN_YEAR}", int(old.sum()), "Dropped rows",
+        "England only has data from 2000; older USA/Ireland records used different methods and are sparse.",
+    ))
+
+    # 5. Duplicates
+    df, dup_log = audit_and_remove_duplicates(df)
+    log.extend(dup_log)
+
+    # 6. Physical bounds (before placeholder detection)
+    df, bound_log = filter_physically_impossible_values(df, PHYSICAL_RULES)
+    log.extend(bound_log)
+
+    # 7. Placeholder (filled-in) values -> NaN
+    mask, audit = detect_placeholder_values(df)
+    for col in PARAM_COLS:
+        n = int(mask[col].sum())
+        df.loc[mask[col], col] = np.nan
+        log.append(_log_entry(
+            f"{col}: repeated placeholder value (filled in by the dataset authors)",
+            f"{n:,} ({100 * n / len(df):.1f}% of rows)",
+            "Set to NaN (imputed later, train-only, with a missing-indicator)",
+            "A value repeated for 5%+ of a country/water-type group, 2.5x more than any other (checked up to 3 times), is not a measurement.",
+        ))
+
+    df["n_genuine_params"] = df[PARAM_COLS].notna().sum(axis=1)
+    df["n_genuine_sensors"] = df[SENSOR_COLS].notna().sum(axis=1)
+
+    # 8. Row-quality filter
+    weak = (df["n_genuine_params"] < min_genuine_params) | (df["n_genuine_sensors"] < min_genuine_sensors)
+    weak_by_country = df.loc[weak, "country"].value_counts().to_dict()
+    df = df.loc[~weak].reset_index(drop=True)
+    log.append(_log_entry(
+        f"Rows with fewer than {min_genuine_params} of 8 genuine parameters or fewer than {min_genuine_sensors} of 3 genuine sensor readings",
+        f"{int(weak.sum()):,} {weak_by_country}",
+        "Dropped rows",
+        "Mostly filled-in rows: their CCME target is computed from constants, so they teach the model nothing real. This removes most USA rows.",
+    ))
+
+    # 9. Tidy columns and identifiers
+    df["waterbody_type"] = df["waterbody_type"].map(WATERBODY_GROUPS)
+    df["site_id"] = df["country"].astype(str) + "|" + df["site_id"].astype(str).str.strip()
+    df["year"] = df["date"].dt.year
+    df["month"] = df["date"].dt.month
+    log.append(_log_entry("Site identifiers", df["site_id"].nunique(),
+                          "Prefixed with country so ids are unique across countries",
+                          "Needed so the site split cannot mix two stations that share a name."))
+
+    # 10. Sample whole sites to keep the file GitHub-sized
+    before = len(df)
+    df = sample_sites_with_caps(df, caps, seed=seed).reset_index(drop=True)
+    log.append(_log_entry(
+        "File size (GitHub limit)", f"{before:,} -> {len(df):,} rows, {df['site_id'].nunique():,} sites",
+        f"Random sample of whole sites per country, caps {dict(caps)}, seed {seed}",
+        "A full file would be hundreds of MB; whole-site sampling keeps each station's history intact.",
+    ))
+
+    # 11. Splits: train / validation / test (70 / 10 / 20 of rows, by station)
+    train_idx, val_idx, test_idx = generate_station_split_3way(df, "site_id", (1 - test_size - val_size, val_size, test_size), seed)
+    df["split"] = "train"
+    df.loc[val_idx, "split"] = "val"
+    df.loc[test_idx, "split"] = "test"
+    log.append(_log_entry(
+        "Station split (main): train / val / test",
+        f"{len(train_idx):,} / {len(val_idx):,} / {len(test_idx):,} rows; "
+        f"{df.loc[train_idx, 'site_id'].nunique():,} / {df.loc[val_idx, 'site_id'].nunique():,} / {df.loc[test_idx, 'site_id'].nunique():,} sites",
+        "Stations shuffled (seed 42) and dealt out until 70% / 10% / 20% of rows are reached, stored in the `split` column",
+        "No station is in more than one set. Validation is for tuning and early stopping; the test set is touched once.",
+    ))
+    # time split: train up to cutoff-1 ... validation = years in between, test = after cutoff
+    df["split_time"] = np.where(
+        df["year"] > time_cutoff_year, "test",
+        np.where(df["year"] >= time_val_start_year, "val", "train"),
+    )
+    tc = df["split_time"].value_counts()
+    log.append(_log_entry(
+        "Time split (secondary): train / val / test",
+        f"{tc.get('train', 0):,} / {tc.get('val', 0):,} / {tc.get('test', 0):,} rows",
+        f"Train up to {time_val_start_year - 1}, validation {time_val_start_year}-{time_cutoff_year}, test {time_cutoff_year + 1}+, stored in `split_time`",
+        "Checks that the model still works on later years.",
+    ))
+
+    # 12. Final column order and save
+    final_cols = (
+        ["country", "site_id", "waterbody_type", "date", "year", "month"]
+        + PARAM_COLS
+        + ["n_genuine_params", "target_ccme_value", "target_ccme_class", "split", "split_time"]
+    )
+    final = df[final_cols].copy()
+    final["date"] = final["date"].dt.strftime("%Y-%m-%d")
+    final[PARAM_COLS + ["target_ccme_value"]] = final[PARAM_COLS + ["target_ccme_value"]].round(4)
+
+    out_path = os.path.abspath(os.path.expanduser(out_path))
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    final.to_csv(out_path, index=False)
+    log.append(_log_entry(
+        "Output", f"{len(final):,} rows x {final.shape[1]} columns, {os.path.getsize(out_path) / 1e6:.1f} MB",
+        f"Saved {os.path.basename(out_path)}", "The single processed dataset used by every later step.",
+    ))
+    return final, log, audit
+
+
+def write_cleaning_log_md(log: Sequence[Mapping[str, Any]], path: str, header: str = "", footer: str = "") -> None:
+    """Write the cleaning log as a Markdown table (docs/cleaning_log.md)."""
+    lines = [header.rstrip(), "", "| Issue found | How many rows/values | Action | Why |", "| :--- | :--- | :--- | :--- |"]
+    for e in log:
+        cells = [str(e[k]).replace("|", "/").replace("\n", " ") for k in ("Issue found", "How many rows/values", "Action", "Why")]
+        lines.append("| " + " | ".join(cells) + " |")
+    if footer:
+        lines += ["", footer.rstrip()]
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
