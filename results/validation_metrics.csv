@@ -1,0 +1,5 @@
+model,parameters,mae,rmse,r2
+XGBRegressor,"{'n_estimators': 300, 'max_depth': 7, 'learning_rate': 0.05}",7.748940821020446,11.231884884117877,0.3446459157535853
+RandomForestRegressor,"{'n_estimators': 200, 'max_depth': 12, 'min_samples_leaf': 2}",7.791247749236714,11.28546189383834,0.33837881885012533
+Ridge,{'alpha': 0.1},8.687519244598274,12.262601818805702,0.21884723239922454
+DummyRegressor,{'strategy': 'mean'},9.76168068866627,13.912045023610027,-0.0054319270356724125

@@ -73,22 +73,56 @@ def add_chemistry_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+
 def add_site_history_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Uses ONLY earlier rows of the same site (never the row itself or later rows) and
-    ONLY the three sensor columns (never the target or held-out parameters):
-      <sensor>_site_prev_mean : running mean of the site's previous readings
-      site_prev_n             : how many earlier samples this site has
-      days_since_prev         : days since the site's previous sample
-    Requires df sorted by site_id then date (load_final_dataset does this).
+    Build station-history features using only strictly earlier dates.
+    All observations from the same station-date receive identical history.
     """
     out = df.copy()
-    grp = out.groupby("site_id", sort=False)
-    for c in SENSOR_COLS:
-        out[f"{c}_site_prev_mean"] = grp[c].transform(lambda s: s.shift(1).expanding().mean())
-    out["site_prev_n"] = grp.cumcount()
-    out["days_since_prev"] = grp["date"].diff().dt.days
-    return out
+    out["_original_order"] = np.arange(len(out))
+
+    # Aggregate sensor readings by station and date for history calculations.
+    daily = (
+        out.groupby(["site_id", "date"], as_index=False, sort=True)[SENSOR_COLS]
+        .mean()
+        .sort_values(["site_id", "date"])
+    )
+
+    grouped = daily.groupby("site_id", sort=False)
+
+    # Running means using readings from earlier dates only.
+    for col in SENSOR_COLS:
+        daily[f"{col}_site_prev_mean"] = grouped[col].transform(
+            lambda s: s.shift(1).expanding().mean()
+        )
+
+    # Number of distinct earlier sampling dates.
+    daily["site_prev_n"] = grouped.cumcount()
+
+    # Days since the previous distinct sampling date.
+    daily["days_since_prev"] = grouped["date"].diff().dt.days
+
+    # Attach date-level history to every original observation.
+    history = daily[["site_id", "date"] + HISTORY_COLS]
+
+    out = out.drop(
+        columns=[col for col in HISTORY_COLS if col in out.columns],
+        errors="ignore",
+    )
+    out = out.merge(
+        history,
+        on=["site_id", "date"],
+        how="left",
+        validate="many_to_one",
+        sort=False,
+    )
+
+    return (
+        out.sort_values("_original_order")
+        .drop(columns="_original_order")
+        .reset_index(drop=True)
+    )
 
 
 def make_features(df: pd.DataFrame) -> pd.DataFrame:

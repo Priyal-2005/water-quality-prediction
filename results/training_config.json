@@ -1,0 +1,38 @@
+{
+  "target": "target_ccme_value",
+  "split": "split (station-based)",
+  "random_state": 42,
+  "feature_columns": [
+    "dissolved_oxygen_mg_l",
+    "ph",
+    "temperature_c",
+    "month_sin",
+    "month_cos",
+    "do_sat_pct",
+    "do_x_temp",
+    "dissolved_oxygen_mg_l_site_prev_mean",
+    "ph_site_prev_mean",
+    "temperature_c_site_prev_mean",
+    "site_prev_n",
+    "days_since_prev",
+    "waterbody_type",
+    "country"
+  ],
+  "selected_parameters": {
+    "Ridge": {
+      "alpha": 0.1
+    },
+    "RandomForestRegressor": {
+      "n_estimators": 200,
+      "max_depth": 12,
+      "min_samples_leaf": 2
+    },
+    "XGBRegressor": {
+      "n_estimators": 300,
+      "max_depth": 7,
+      "learning_rate": 0.05
+    }
+  },
+  "selection_metric": "validation RMSE",
+  "test_used_for_tuning": false
+}
