@@ -33,7 +33,7 @@ HELD_OUT_COLS = [
 # Columns that must never be model inputs.
 FORBIDDEN_COLS = HELD_OUT_COLS + [
     "target_ccme_value", "target_ccme_class", "n_genuine_params",
-    "site_id", "date", "split", "split_time",
+    "site_id", "date", "split", "split_time", "row_id",
 ]
 
 SENSOR_COLS = ["dissolved_oxygen_mg_l", "ph", "temperature_c"]
@@ -45,8 +45,11 @@ FEATURE_COLS = NUMERIC_COLS + CATEGORICAL_COLS
 
 
 def load_final_dataset(path: str = "data/processed/final_dataset.csv") -> pd.DataFrame:
-    """Load the single processed file, sorted by site and date (needed for history features)."""
+    """Load the single processed file, sorted by site and date (needed for history features). Adds `row_id` (original row number)."""
     df = pd.read_csv(path, parse_dates=["date"])
+    # row_id = position of the row in final_dataset.csv. It survives the sort below, so saved
+    # predictions can be joined back to the file. It is an ID, never a model input.
+    df.insert(0, "row_id", np.arange(len(df)))
     return df.sort_values(["site_id", "date"]).reset_index(drop=True)
 
 

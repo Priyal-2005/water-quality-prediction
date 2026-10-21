@@ -1,10 +1,11 @@
-
 """
 Train baseline and tree-based regression models for water-quality prediction.
 
 Target: target_ccme_value
 Primary split: station-based train / validation / test
 Test data is reserved for final evaluation and is not used for tuning.
+
+Run from the project root:  python -m src.train
 """
 
 from __future__ import annotations
@@ -65,6 +66,19 @@ def evaluate_validation(pipeline, X_train, y_train, X_val, y_val):
     return regression_metrics(y_val, predictions)
 
 
+def log_trial(trials, name, params, metrics):
+    """Record one tried setting and return its index in the trials list."""
+    trials.append(
+        {
+            "model": name,
+            "parameters": json.dumps(params, sort_keys=True),
+            **metrics,
+            "selected": False,
+        }
+    )
+    return len(trials) - 1
+
+
 def main():
     start_time = time.time()
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -85,88 +99,65 @@ def main():
     print("\nThe test set will not be used for model selection.")
 
     # Keep all model selection on train/validation only.
-    experiments = []
+    # Every setting tried is logged in `trials`; the winner of each model is
+    # the one with the lowest validation RMSE, and only that model is kept.
+    trials = []
+    winners = {}  # model name -> index of the winning trial in `trials`
 
-    # 1. Dummy baseline: predicts the training-target mean.
+    # 1. Dummy baseline: predicts the training-target mean (needs no preprocessing).
     print("\n[1/4] Training DummyRegressor...")
-    dummy = make_pipeline(
-        DummyRegressor(strategy="mean"),
-        scale=False,
-    )
-    dummy_metrics = evaluate_validation(
-        dummy, X_train, y_train, X_val, y_val
-    )
-    experiments.append(
-        {
-            "model": "DummyRegressor",
-            "parameters": {"strategy": "mean"},
-            **dummy_metrics,
-        }
+    dummy = DummyRegressor(strategy="mean")
+    metrics = evaluate_validation(dummy, X_train, y_train, X_val, y_val)
+    winners["DummyRegressor"] = log_trial(
+        trials, "DummyRegressor", {"strategy": "mean"}, metrics
     )
     joblib.dump(dummy, MODEL_DIR / "dummy_regressor.joblib")
-    print("Validation:", dummy_metrics)
+    print("Validation:", metrics)
+
+    # Check results/tuning_results.csv: a winner at the edge of its sweep means the sweep could be extended.
 
     # 2. Ridge baseline.
     print("\n[2/4] Training Ridge baselines...")
-    ridge_candidates = []
-    for alpha in [0.1, 1.0, 10.0, 100.0]:
-        model = make_pipeline(Ridge(alpha=alpha), scale=True)
-        metrics = evaluate_validation(
-            model, X_train, y_train, X_val, y_val
-        )
-        ridge_candidates.append((metrics["rmse"], alpha, model, metrics))
-        print(f"Ridge alpha={alpha}: {metrics}")
+    ridge_alphas = [0.001, 0.01, 0.1, 1, 10, 100, 1000]
 
-    _, best_ridge_alpha, best_ridge, best_ridge_metrics = min(
-        ridge_candidates, key=lambda item: item[0]
-    )
-    experiments.append(
-        {
-            "model": "Ridge",
-            "parameters": {"alpha": best_ridge_alpha},
-            **best_ridge_metrics,
-        }
-    )
+    best_ridge = None
+    best_ridge_rmse = float("inf")
+    for alpha in ridge_alphas:
+        model = make_pipeline(Ridge(alpha=alpha), scale=True)
+        metrics = evaluate_validation(model, X_train, y_train, X_val, y_val)
+        index = log_trial(trials, "Ridge", {"alpha": alpha}, metrics)
+        print(f"Ridge alpha={alpha}: {metrics}")
+        if metrics["rmse"] < best_ridge_rmse:
+            best_ridge, best_ridge_rmse = model, metrics["rmse"]
+            winners["Ridge"] = index
     joblib.dump(best_ridge, MODEL_DIR / "ridge_regression.joblib")
 
-    # 3. Random Forest: select parameters using validation RMSE.
+    # 3. Random Forest: one setting changes at a time.
     print("\n[3/4] Tuning Random Forest...")
-    rf_candidates = []
-    rf_settings = [
-        {"n_estimators": 200, "max_depth": 12, "min_samples_leaf": 2},
-        {"n_estimators": 300, "max_depth": 20, "min_samples_leaf": 2},
-        {"n_estimators": 300, "max_depth": None, "min_samples_leaf": 2},
-    ]
+    rf_settings = (
+        # depth sweep
+        [{"n_estimators": 300, "max_depth": d, "min_samples_leaf": 5} for d in [6, 8, 10, 12, 16]]
+        # leaf sweep
+        + [{"n_estimators": 300, "max_depth": 10, "min_samples_leaf": m} for m in [2, 10, 20]]
+    )
 
+    best_rf = None
+    best_rf_rmse = float("inf")
     for params in rf_settings:
         print("Trying Random Forest:", params)
         model = make_pipeline(
-            RandomForestRegressor(
-                **params,
-                n_jobs=-1,
-                random_state=RANDOM_STATE,
-            ),
+            RandomForestRegressor(**params, n_jobs=-1, random_state=RANDOM_STATE),
             scale=False,
         )
-        metrics = evaluate_validation(
-            model, X_train, y_train, X_val, y_val
-        )
-        rf_candidates.append((metrics["rmse"], params, model, metrics))
+        metrics = evaluate_validation(model, X_train, y_train, X_val, y_val)
+        index = log_trial(trials, "RandomForestRegressor", params, metrics)
         print("Validation:", metrics)
-
-    _, best_rf_params, best_rf, best_rf_metrics = min(
-        rf_candidates, key=lambda item: item[0]
-    )
-    experiments.append(
-        {
-            "model": "RandomForestRegressor",
-            "parameters": best_rf_params,
-            **best_rf_metrics,
-        }
-    )
+        if metrics["rmse"] < best_rf_rmse:
+            best_rf, best_rf_rmse = model, metrics["rmse"]
+            winners["RandomForestRegressor"] = index
     joblib.dump(best_rf, MODEL_DIR / "random_forest.joblib")
 
-    # 4. XGBoost: select parameters using validation RMSE.
+    # 4. XGBoost: one setting changes at a time.
     print("\n[4/4] Tuning XGBoost...")
     try:
         from xgboost import XGBRegressor
@@ -175,13 +166,17 @@ def main():
             "XGBoost is required. Install it with: pip install xgboost"
         ) from exc
 
-    xgb_settings = [
-        {"n_estimators": 300, "max_depth": 4, "learning_rate": 0.05},
-        {"n_estimators": 500, "max_depth": 5, "learning_rate": 0.03},
-        {"n_estimators": 300, "max_depth": 7, "learning_rate": 0.05},
-    ]
-    xgb_candidates = []
+    xgb_settings = (
+        # depth sweep
+        [{"n_estimators": 300, "max_depth": d, "learning_rate": 0.05} for d in [4, 6, 8, 10]]
+        # learning-rate sweep
+        + [{"n_estimators": 300, "max_depth": 8, "learning_rate": lr} for lr in [0.03, 0.1]]
+        # more trees
+        + [{"n_estimators": 600, "max_depth": 8, "learning_rate": 0.05}]
+    )
 
+    best_xgb = None
+    best_xgb_rmse = float("inf")
     for params in xgb_settings:
         print("Trying XGBoost:", params)
         model = make_pipeline(
@@ -198,28 +193,32 @@ def main():
             ),
             scale=False,
         )
-        metrics = evaluate_validation(
-            model, X_train, y_train, X_val, y_val
-        )
-        xgb_candidates.append((metrics["rmse"], params, model, metrics))
+        metrics = evaluate_validation(model, X_train, y_train, X_val, y_val)
+        index = log_trial(trials, "XGBRegressor", params, metrics)
         print("Validation:", metrics)
-
-    _, best_xgb_params, best_xgb, best_xgb_metrics = min(
-        xgb_candidates, key=lambda item: item[0]
-    )
-    experiments.append(
-        {
-            "model": "XGBRegressor",
-            "parameters": best_xgb_params,
-            **best_xgb_metrics,
-        }
-    )
+        if metrics["rmse"] < best_xgb_rmse:
+            best_xgb, best_xgb_rmse = model, metrics["rmse"]
+            winners["XGBRegressor"] = index
     joblib.dump(best_xgb, MODEL_DIR / "xgboost_regressor.joblib")
 
-    # Save validation results and selected settings.
-    results = pd.DataFrame(experiments).sort_values("rmse")
+    # Save every trial (winner marked by its index) and the validation leaderboard.
+    for index in winners.values():
+        trials[index]["selected"] = True
+    trials_df = pd.DataFrame(trials)
+    trials_df.to_csv(RESULT_DIR / "tuning_results.csv", index=False)
+
+    results = (
+        trials_df[trials_df["selected"]]
+        .drop(columns="selected")
+        .sort_values("rmse")
+    )
     results.to_csv(RESULT_DIR / "validation_metrics.csv", index=False)
 
+    selected_parameters = {
+        name: json.loads(trials[index]["parameters"])
+        for name, index in winners.items()
+        if name != "DummyRegressor"
+    }
     with open(RESULT_DIR / "training_config.json", "w") as f:
         json.dump(
             {
@@ -227,11 +226,7 @@ def main():
                 "split": "split (station-based)",
                 "random_state": RANDOM_STATE,
                 "feature_columns": FEATURE_COLS,
-                "selected_parameters": {
-                    "Ridge": {"alpha": best_ridge_alpha},
-                    "RandomForestRegressor": best_rf_params,
-                    "XGBRegressor": best_xgb_params,
-                },
+                "selected_parameters": selected_parameters,
                 "selection_metric": "validation RMSE",
                 "test_used_for_tuning": False,
             },
@@ -251,7 +246,7 @@ def main():
         prediction_rows.append(
             pd.DataFrame(
                 {
-                    "row_id": X_val.index,
+                    "row_id": df.loc[X_val.index, "row_id"].to_numpy(),
                     "model": name,
                     "y_true": y_val.to_numpy(),
                     "y_pred": pred,

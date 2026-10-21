@@ -20,17 +20,17 @@
   ],
   "selected_parameters": {
     "Ridge": {
-      "alpha": 0.1
+      "alpha": 0.001
     },
     "RandomForestRegressor": {
-      "n_estimators": 200,
-      "max_depth": 12,
-      "min_samples_leaf": 2
+      "max_depth": 16,
+      "min_samples_leaf": 5,
+      "n_estimators": 300
     },
     "XGBRegressor": {
-      "n_estimators": 300,
-      "max_depth": 7,
-      "learning_rate": 0.05
+      "learning_rate": 0.03,
+      "max_depth": 8,
+      "n_estimators": 300
     }
   },
   "selection_metric": "validation RMSE",
