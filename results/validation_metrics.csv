@@ -1,5 +1,5 @@
 model,parameters,mae,rmse,r2
-XGBRegressor,"{""learning_rate"": 0.03, ""max_depth"": 8, ""n_estimators"": 300}",7.7292252087217745,11.204830606631216,0.3477992204958711
+XGBRegressor,"{""learning_rate"": 0.03, ""max_depth"": 8, ""n_estimators"": 300}",7.701405552906082,11.194161038822394,0.3490407184795363
 RandomForestRegressor,"{""max_depth"": 16, ""min_samples_leaf"": 5, ""n_estimators"": 300}",7.772836234331488,11.246985869947823,0.3428825170659442
 Ridge,"{""alpha"": 0.001}",8.68751922251037,12.262601077037013,0.218847326903581
 DummyRegressor,"{""strategy"": ""mean""}",9.76168068866627,13.912045023610027,-0.0054319270356724125
