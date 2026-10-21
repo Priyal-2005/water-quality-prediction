@@ -7,13 +7,13 @@ Course project (Advanced Machine Learning + Deep Learning), team of 5.
 
 ## Team
 
-| Name | Role | GitHub |
-|---|---|---|
-| Priyal | Evaluation, theory (evaluation half), GitHub repo and code quality | Priyal-2005 |
-| Anusha | Model training, theory (models half) | _add username_ |
-| Sarthak | Dataset research, cleaning, feature engineering | _add username_ |
-| Kashika | Literature review, report (Intro, Related Work, Conclusion) | _add username_ |
-| Vaishnavi | Dataset quality and EDA, report assembly | _add username_ |
+| Name | Role |
+|---|---|
+| Priyal | Evaluation, theory (evaluation half), GitHub repo and code quality |
+| Anusha | Model training, theory (models half) |
+| Sarthak | Dataset research, cleaning, feature engineering |
+| Kashika | Literature review, report (Intro, Related Work, Conclusion) |
+| Vaishnavi | Dataset quality and EDA, report assembly |
 
 ## Problem statement
 
