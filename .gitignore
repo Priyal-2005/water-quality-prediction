@@ -1,0 +1,42 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- Secrets ---
+.env
+
+# --- Data ---
+# Raw data is never committed (it can be huge). Put it in data/raw/ and
+# document the download link in the README.
+data/raw/*
+!data/raw/.gitkeep
+# data/processed/ (clean.csv, split_indices.json) IS committed so everyone
+# trains on identical data. If a file gets bigger than ~50 MB, ignore it too.
+
+# --- Models ---
+# Saved models can be regenerated with src/train.py
+models/*
+!models/.gitkeep
+
+# --- LaTeX build files (keep the .tex and .bib, not the build output) ---
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+report/*.bbl
+report/*.blg
+report/*.synctex.gz
+report/*.fls
+report/*.fdb_latexmk
