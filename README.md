@@ -34,9 +34,20 @@ Both splits are stored as columns in `data/processed/final_dataset.csv`, so ever
 | **By station (main)** | `split` | 70% of rows | 10% | 20% | Does the model work at monitoring stations it has never seen? |
 | **By year (secondary)** | `split_time` | up to 2015 (71%) | 2016–2017 (8%) | 2018 onwards (20%) | Does the model work on future data? |
 
+- **What is a station?** A station is a fixed monitoring site (`site_id`, for example `Canada|LI110048`) that is sampled many times over the years. One station therefore has many rows. The dataset has 9,940 stations.
 - **By station:** all rows of a station go to one set only (no station is shared between sets), so the model cannot memorise a station's usual water quality. Stations are shuffled with seed 42 and dealt out until each share of rows is reached.
 - **By year:** train on the older years, tune on 2016–2017, test on 2018 onwards. Years cannot be cut into exact percentages, hence 71 / 8 / 20.
 - **How to use them:** train on `train`, tune hyperparameters and stop early on `val`, and look at `test` once at the end. Report the station split as the main result and the year split as the extra check. The Phase 2 neural network must use the same columns.
+
+#### Viva answer: why split by station and not by random rows?
+
+- Water quality at one station stays similar from sample to sample. With a random row split, the same station would appear in both train and test, and the model could score well just by remembering that a station is usually clean or dirty. That is leakage and would overstate performance.
+- With the station split, the test set contains only stations the model has never seen, so the score answers the real question: does it work at a new location?
+- Example: a station with 100 rows goes entirely to train, another with 50 rows goes entirely to test. We count rows, not stations, so the shares come out at exactly 70 / 10 / 20% of rows.
+- The year split is a second, separate check for future data. In it the same stations can appear in several sets, because it only tests time.
+- Site-history features (`site_prev_n`, running mean of a station's earlier readings) use only earlier rows of the same station, so they cannot see the future or other sets' rows.
+- We checked it: zero stations are shared between train and test (see `01_eda.ipynb` section B7).
+
 
 ```python
 from src.features import load_final_dataset, make_features, get_xy
