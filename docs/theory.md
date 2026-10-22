@@ -125,7 +125,7 @@ The current training pipeline evaluates the following values:
 
 `0.001`, `0.01`, `0.1`, `1`, `10`, `100` and `1000`.
 
-The selected configuration is `alpha=0.001`, which achieves the lowest validation RMSE among the tested Ridge configurations.
+The selected configuration is `alpha=0.001`, which achieves the lowest validation RMSE among the tested Ridge configurations. The scores are practically identical for every alpha from 0.001 to 100 (RMSE 12.2626 to 12.2634; R² 0.2188), so this choice is arbitrary: with about 180,000 training rows and 14 inputs the linear model has nothing to shrink.
 
 Ridge Regression provides a useful linear benchmark. Comparing it with tree-based models helps assess whether nonlinear relationships and interactions improve predictive performance.
 
@@ -176,7 +176,7 @@ The model achieves the following validation results:
 - RMSE: 11.2470
 - R²: 0.3429
 
-This is the best Random Forest configuration among the candidates evaluated in the current run. The results do not establish that it is the globally optimal configuration.
+This is the best Random Forest configuration among the candidates evaluated in the current run. `max_depth=16` is the deepest value tried and the validation score was still rising (R² 0.339 at depth 12, 0.343 at depth 16), so the optimum may lie at a greater depth. The results do not establish that it is the globally optimal configuration.
 
 ## 6. XGBoost Regression
 
@@ -258,11 +258,11 @@ The selected XGBoost configuration is:
 
 It achieves:
 
-- MAE: 7.7014
-- RMSE: 11.1942
-- R²: 0.3490
+- MAE: 7.7292
+- RMSE: 11.2048
+- R²: 0.3478
 
-This is the best XGBoost configuration among the candidates evaluated in the current run.
+This is the best XGBoost configuration among the candidates evaluated in the current run. `learning_rate=0.03` is the smallest value tried and scored better than 0.05 and 0.10, so a smaller rate might help slightly. The gain from further tuning is expected to be small: the two best tree models differ by about 0.005 in R².
 
 ## 7. Experimental Methodology
 
@@ -283,17 +283,15 @@ The training script uses a fixed random seed of `42` where supported to improve 
 
 ### 7.1 Cross-validation status
 
-The results presented in this document come from a single validation split and the manually defined hyperparameter searches described above.
+The results presented in this document come from a single validation split (station-based) and the manually defined hyperparameter searches described above. No cross-validation was performed, and the validation results must not be described as cross-validation results.
 
-The required five-fold `GroupKFold` tuning grouped by station must be implemented and run separately if it is not already present in the current training script. It should operate on training data only, keeping observations from the same station within the same fold.
-
-The validation results in this document must not be described as cross-validation results.
+Because the hyperparameters were chosen on this one validation split, the validation scores are somewhat optimistic. Part of the validation-to-test drop (for example XGBoost R² 0.348 to 0.293) is this selection effect; the rest is likely because the test stations differ from the validation stations (we have not separated the two causes). The unbiased estimate is the test-set score in `notebooks/05_evaluation.ipynb`. The project brief asks for a site- or time-separated split and for MAE, RMSE and R²; it does not require cross-validation. Station-grouped `GroupKFold` cross-validation on the training data would be an optional extension.
 
 ### 7.2 Test-set evaluation
 
 The test set contains 51,973 observations and is reserved for final evaluation. Its labels must not be used to select hyperparameters or otherwise influence model selection.
 
-Once the model configurations are finalised, the selected models should be evaluated on the held-out test set. Final metrics and the prediction files required by the evaluation workflow should then be generated separately.
+The final evaluation is done in `notebooks/05_evaluation.ipynb`. It predicts on the test set once, saves `results/test_predictions.csv`, and reports MAE, RMSE and R² with 95% bootstrap confidence intervals (resampling stations), a paired model comparison, error analysis by country, water type and quality level, a year-split check, ablations and SHAP.
 
 ## 8. Validation Results
 
@@ -304,17 +302,17 @@ The following table reports the results from the latest training run. For each m
 | Dummy Regressor | 9.7617 | 13.9120 | -0.0054 |
 | Ridge Regression | 8.6875 | 12.2626 | 0.2188 |
 | Random Forest | 7.7728 | 11.2470 | 0.3429 |
-| XGBoost | 7.7014 | 11.1942 | 0.3490 |
+| XGBoost | 7.7292 | 11.2048 | 0.3478 |
 
 ### 8.1 Interpretation
 
-**XGBoost achieves the best validation performance** among the four selected models, with the lowest RMSE of approximately 11.1942.
+**XGBoost achieves the best validation performance** among the four selected models, with the lowest RMSE of approximately 11.2048.
 
 Compared with the Dummy Regressor, XGBoost reduces validation RMSE by approximately 19.5%. Random Forest performs similarly, with a validation RMSE of approximately 11.2470.
 
 Both tree-based models outperform Ridge Regression and the Dummy Regressor on the current validation split. This suggests that nonlinear relationships and interactions may help predict the target beyond what the tested linear model captures.
 
-The XGBoost R² of approximately 0.349 indicates that the model explains about 34.9% of the variation in the validation targets relative to predicting their mean.
+The XGBoost R² of approximately 0.348 indicates that the model explains about 34.8% of the variation in the validation targets relative to predicting their mean.
 
 This is moderate predictive performance, and substantial variation remains unexplained. These findings are limited to the current validation split; final generalisation performance must be assessed on the held-out test set.
 
@@ -335,29 +333,27 @@ These files contain fitted model artifacts and can be regenerated by running:
 python -m src.train
 ```
 
-The model binaries may be excluded from Git if the repository intentionally stores only reproducible code and experiment outputs.
+The model binaries are excluded from Git (`.gitignore`) because they are large (the Random Forest file is about 190 MB) and can be regenerated with the command above.
 
 ### 9.2 Experiment outputs
 
 - `results/validation_metrics.csv`: validation metrics for the selected models.
-- `results/tuning_results.csv`: individual candidate configurations, validation metrics and selection markers, when generated by the current script.
+- `results/tuning_results.csv`: every candidate configuration, its validation metrics, and a `selected` marker.
 - `results/training_config.json`: target, split information, random seed and selected hyperparameters.
-- `results/validation_predictions.csv`: validation predictions, if generated by the current script.
+- `results/validation_predictions.csv`: validation predictions of the selected models, with `row_id` (the row number in `data/processed/final_dataset.csv`), `model`, `y_true` and `y_pred`.
 
-The presence of a file should be verified against the current training script and output directory.
-
-Final test predictions are a separate deliverable. Where required by the evaluation workflow, generate one CSV per model with the columns `row_id`, `y_true` and `y_pred`, using the original dataset row identifiers and the held-out test observations. These files must not be confused with validation predictions.
+Final test predictions are produced by `notebooks/05_evaluation.ipynb` in `results/test_predictions.csv` (columns `row_id`, `model`, `y_true`, `y_pred`) and must not be confused with the validation predictions.
 
 ## 10. Limitations and Next Steps
 
 The current experiments establish a baseline comparison and identify promising candidate configurations, but several limitations remain.
 
 1. **Limited hyperparameter search:** The manually selected configurations do not guarantee globally optimal parameters.
-2. **Cross-validation:** The required five-fold station-grouped `GroupKFold` tuning must be completed and its results recorded before claiming that cross-validation has been performed.
-3. **Final test evaluation:** Final test metrics and test prediction CSVs must be generated after model selection is complete.
+2. **Single validation split:** Hyperparameters were chosen on one validation split, so validation scores are somewhat optimistic (and station groups differ between sets) and no cross-validation was performed.
+3. **Edge-of-range settings:** The selected Random Forest depth (16) and XGBoost learning rate (0.03) are at the edge of their search ranges; Ridge's alpha has no effect on the score.
 4. **Moderate predictive performance:** The validation R² values indicate that a substantial proportion of target variation remains unexplained.
 5. **Target bounds:** The target lies between 0 and 100, but the regression estimators do not inherently enforce these bounds on their predictions.
 6. **Interpretability:** Feature importance and SHAP analysis can help explain model behaviour, but feature importance does not establish causation.
 7. **Reproducibility:** The training configuration, metrics and prediction artifacts should be retained so that the experiments can be reproduced and compared.
 
-The next priorities are to complete the required station-grouped cross-validation, finalise model selection without using test data, generate test predictions for the evaluation workflow, and coordinate the final evaluation and interpretability results with the rest of the project team.
+The final test evaluation, error analysis, ablations and SHAP results are in `notebooks/05_evaluation.ipynb`. XGBoost results can differ by about 0.001 in R² between machines and library versions, so exact numbers should be quoted from the results files of a single run.
