@@ -663,7 +663,7 @@ def generate_station_split_3way(
 #     measurements: for each (country, water type) the authors filled
 #     missing parameters with one repeated value (e.g. BOD = 2.7 for 44% of
 #     England rows). We detect these placeholders and set them to NaN.
-#   * ~28% of England rows are effluent / sewage / drainage water, not
+#   * ~30% (29.9%) of England rows are effluent / sewage / drainage water, not
 #     surface water.
 #   * The target (CCME index) is computed from the same 8 parameters, so the
 #     model must NOT be given all 8 (see docs/target_definition.md).
@@ -867,7 +867,7 @@ def build_final_dataset(
         "Non-surface water types (effluent, sewage, drainage)",
         f"{int(non_surface.sum()):,} {by_type}",
         "Dropped rows",
-        "The task is surface-water quality; effluent/sewage has a different chemistry and was ~28% of England.",
+        "The task is surface-water quality; effluent/sewage has a different chemistry and was about 30% of England (29.9%).",
     ))
 
     # 4. Modern records only

@@ -14,7 +14,7 @@ Every candidate we examined, with the verdict. Final choice: **candidate 2, the 
 
 - It is the dataset named in the brief, so no complexity argument is needed. It has site ids and full dates, which allow the station split and the time split the brief asks for.
 - **Problems found, and how they were fixed (`notebooks/02_cleaning.ipynb`, `docs/cleaning_log.md`):**
-  - 28% of England is effluent, sewage or drainage water: dropped.
+  - About 30% (29.9%) of England is effluent, sewage or drainage water: dropped.
   - Many values are filled-in placeholders (one repeated value per country and water type): set to NaN.
   - Duplicate rows, impossible temperatures and pH: removed or set to NaN.
   - Records before 2000 (different methods, sparse): dropped.
@@ -25,7 +25,7 @@ Every candidate we examined, with the verdict. Final choice: **candidate 2, the 
 
 | Country | Raw rows | In `final_dataset.csv` | Notes |
 |---|---|---|---|
-| England | 2,129,198 | 180,082 (4,413 sites) | Core of the dataset; 28% was effluent/sewage |
+| England | 2,129,198 | 180,082 (4,413 sites) | Core of the dataset; 29.9% was effluent/sewage |
 | Ireland | 235,019 | 70,282 (3,691 sites) | 82% of target is at the maximum of 100; about a third of dissolved oxygen was a filler |
 | USA | 413,814 | 6,810 (94 sites) | Mostly filled-in values (BOD 100% one value), so few usable rows |
 | Canada | 3,949 | 2,600 (1,742 sites) | Small |

@@ -9,7 +9,7 @@
 | :--- | :--- | :--- | :--- |
 | Rows loaded for the chosen countries | 2,781,980 {'England': 2129198, 'USA': 413814, 'Ireland': 235019, 'Canada': 3949} | Kept countries ['England', 'USA', 'Ireland', 'Canada'] from Combined_dataset.csv | Other countries are not used (China has a single site, so no site split is possible). |
 | Unparseable dates (dd-mm-yyyy) | 0 | None found | Date is needed for the time split and seasonal features. |
-| Non-surface water types (effluent, sewage, drainage) | 635,532 {'Effluent': 601550, 'Sewage': 23777, 'Drainage': 10205} | Dropped rows | The task is surface-water quality; effluent/sewage has a different chemistry and was ~28% of England. |
+| Non-surface water types (effluent, sewage, drainage) | 635,532 {'Effluent': 601550, 'Sewage': 23777, 'Drainage': 10205} | Dropped rows | The task is surface-water quality; effluent/sewage has a different chemistry and was about 30% of England (29.9%). |
 | Records before 2000 | 243089 | Dropped rows | England only has data from 2000; older USA/Ireland records used different methods and are sparse. |
 | Exact duplicate rows across all columns | 7277 | Removed duplicate rows and reset the index | Exact duplicates can over-weight repeated observations and complicate validation. |
 | ph physical bounds check [0.0, 14.0] | 503 | Set out-of-range values to NaN; retained rows | Outside the physical pH scale; instrument error |
