@@ -20,7 +20,13 @@ def load_dl_data(
     path="data/processed/final_dataset.csv",
     split_col="split",
 ):
-    """Return preprocessed NumPy arrays and feature names."""
+    """Return preprocessed NumPy arrays, feature names, station ids and row ids.
+
+    Extra keys (not model inputs):
+      groups_train / groups_val / groups_test  station id (site_id) of each row, for GroupKFold
+      row_id_train / row_id_val / row_id_test  row number in final_dataset.csv, for joining predictions
+      station_overlap  dict with the computed number of stations shared between splits
+    """
 
     if split_col not in ("split", "split_time"):
         raise ValueError("split_col must be 'split' or 'split_time'")
@@ -34,14 +40,20 @@ def load_dl_data(
         df, split_col=split_col
     )
 
-    # 3. Verify station separation for the main split
-    if split_col == "split":
-        train_sites = set(df.loc[df[split_col] == "train", "site_id"])
-        test_sites = set(df.loc[df[split_col] == "test", "site_id"])
+    # 3. Station ids and row ids of every split (same order as X and y)
+    parts = {k: df[df[split_col] == k] for k in ("train", "val", "test")}
+    sites = {k: set(v["site_id"]) for k, v in parts.items()}
+    station_overlap = {
+        "train_test": len(sites["train"] & sites["test"]),
+        "train_val": len(sites["train"] & sites["val"]),
+        "val_test": len(sites["val"] & sites["test"]),
+    }
 
-        overlap = train_sites.intersection(test_sites)
-        assert len(overlap) == 0, (
-            f"Train-test station overlap detected: {len(overlap)}"
+    # The main split is by station, so no station may appear in two sets.
+    # (The year split reuses stations across years on purpose, so it is only reported.)
+    if split_col == "split":
+        assert sum(station_overlap.values()) == 0, (
+            f"Station overlap detected: {station_overlap}"
         )
 
     # 4. Build preprocessor and fit ONLY on training rows
@@ -61,6 +73,13 @@ def load_dl_data(
         "X_test": np.asarray(X_test_processed, dtype=np.float32),
         "y_test": np.asarray(y_test, dtype=np.float32),
         "feature_names": preprocessor.get_feature_names_out().tolist(),
+        "groups_train": parts["train"]["site_id"].to_numpy(),
+        "groups_val": parts["val"]["site_id"].to_numpy(),
+        "groups_test": parts["test"]["site_id"].to_numpy(),
+        "row_id_train": parts["train"]["row_id"].to_numpy(),
+        "row_id_val": parts["val"]["row_id"].to_numpy(),
+        "row_id_test": parts["test"]["row_id"].to_numpy(),
+        "station_overlap": station_overlap,
     }
 
     return result
@@ -74,8 +93,12 @@ if __name__ == "__main__":
     for name, value in data.items():
         if name == "feature_names":
             print(f"{name}: {len(value)} features")
+        elif name == "station_overlap":
+            continue
         else:
             print(f"{name}: {value.shape}")
 
-    print("\nTrain-test station overlap: 0")
+    print("\nStation overlap (split):", data["station_overlap"])
+    print("Station overlap (split_time, reported only):",
+          load_dl_data(split_col="split_time")["station_overlap"])
     print("Data pipeline test completed.")
