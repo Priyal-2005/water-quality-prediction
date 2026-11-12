@@ -1,0 +1,59 @@
+{
+  "seed": 42,
+  "split": "split (by station)",
+  "selected_trial": 0,
+  "selection_rule": "lowest validation RMSE",
+  "n_trials": 13,
+  "max_epochs": 60,
+  "early_stopping_patience": 10,
+  "mlp": {
+    "widths": [
+      128,
+      64
+    ],
+    "dropout": 0.2,
+    "weight_decay": 0.0001,
+    "batch_norm": false,
+    "lr": 0.001,
+    "loss": "mse",
+    "batch_size": 512
+  },
+  "validation_metrics": {
+    "mae": 7.767292022705078,
+    "rmse": 11.231056030840158,
+    "r2": 0.3447425961494446
+  },
+  "n_features": 30,
+  "feature_names": [
+    "num__dissolved_oxygen_mg_l",
+    "num__ph",
+    "num__temperature_c",
+    "num__month_sin",
+    "num__month_cos",
+    "num__do_sat_pct",
+    "num__do_x_temp",
+    "num__dissolved_oxygen_mg_l_site_prev_mean",
+    "num__ph_site_prev_mean",
+    "num__temperature_c_site_prev_mean",
+    "num__site_prev_n",
+    "num__days_since_prev",
+    "num__missingindicator_dissolved_oxygen_mg_l",
+    "num__missingindicator_ph",
+    "num__missingindicator_temperature_c",
+    "num__missingindicator_do_sat_pct",
+    "num__missingindicator_do_x_temp",
+    "num__missingindicator_dissolved_oxygen_mg_l_site_prev_mean",
+    "num__missingindicator_ph_site_prev_mean",
+    "num__missingindicator_temperature_c_site_prev_mean",
+    "num__missingindicator_days_since_prev",
+    "cat__waterbody_type_Canal",
+    "cat__waterbody_type_Estuarine/Transitional",
+    "cat__waterbody_type_Lake",
+    "cat__waterbody_type_Marine/Coastal",
+    "cat__waterbody_type_River",
+    "cat__country_Canada",
+    "cat__country_England",
+    "cat__country_Ireland",
+    "cat__country_USA"
+  ]
+}
