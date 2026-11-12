@@ -1,5 +1,4 @@
-
-# 5.2 Regularisation Justification
+# Regularisation choices and evidence (Phase 2)
 
 | Choice | Setting | What it does | Why we chose it | Validation Evidence |
 |---|---|---|---|---|

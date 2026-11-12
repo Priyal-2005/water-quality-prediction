@@ -1,4 +1,4 @@
-# Phase 1 (AML) dependencies, pinned to the versions used in our environment (Python 3.14).
+# Phase 1 (AML) and Phase 2 (DL) dependencies, pinned to the versions used in our environment (Python 3.14).
 # Install with: pip install -r requirements.txt
 pandas==3.0.6
 numpy==2.5.4
@@ -10,3 +10,7 @@ matplotlib==3.11.2
 seaborn==0.13.2
 joblib==1.6.0
 jupyter==1.1.1
+
+# Phase 2 (DL). Lower bound only for now: after installing, run `pip freeze | grep -i torch`
+# and replace this line with the exact pinned version (check it supports your Python version).
+torch>=2.5
