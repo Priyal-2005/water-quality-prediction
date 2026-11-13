@@ -1,9 +1,5 @@
 # Phase 2 Ablation Studies: Design Choices & Sensitivity Analysis
 
-> **Notice:** Prepared by Sarthak as part of his Ablation Studies role. To be merged into the IEEE report by Vaishnavi.
-
----
-
 ## 1. Purpose & Motivation
 
 In tabular deep learning, standard benchmarks frequently obscure whether performance changes stem from network capacity, regularisation, feature subsets, or ensembling. This ablation study systematically isolates and quantifies the marginal impact of each key design choice in our Phase 2 Multilayer Perceptron (MLP) architecture.
