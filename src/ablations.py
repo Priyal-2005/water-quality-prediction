@@ -613,8 +613,10 @@ def run_ablation(
     timestamp = datetime.now(timezone.utc).isoformat()
 
     # If output CSV does not exist, initialize with baseline reference row
-    if not output_csv.exists():
-        ref_status = "RUN" if (is_genuine_baseline and not dry_run) else "PLACEHOLDER"
+    # Skip auto-creation ONLY when the current run is baseline training (--vary model --values mlp)
+    is_baseline_run = (vary == "model" and any(v.strip().lower() == "mlp" for v in values))
+    if not output_csv.exists() and not is_baseline_run:
+        ref_status = "PLACEHOLDER"
         ref_row = {
             "run_id": f"ablation_baseline_ref_{timestamp[:10]}",
             "timestamp": timestamp,
@@ -633,11 +635,7 @@ def run_ablation(
             "epochs_run": "NA",
             "seed": seed,
             "config_hash": cfg_hash,
-            "notes": (
-                "Priyal's tuned baseline reference."
-                if is_genuine_baseline
-                else "Placeholder reference: Priyal's tuned config (configs/tuned_mlp.yaml) not yet available."
-            ),
+            "notes": "Pending baseline reference; run --vary model --values mlp to train the tuned baseline.",
         }
         append_result_row(output_csv, ref_row)
 
@@ -650,20 +648,27 @@ def run_ablation(
 
         # Setting parsing and mutation
         if vary == "depth":
+            tuned = tuple(baseline_cfg["widths"])
+            base = tuned[0]
             depth_val = int(val_str)
-            if depth_val == 2:
-                trial_cfg["widths"] = (64, 64)
-            elif depth_val == 3:
-                trial_cfg["widths"] = (64, 64, 64)
-            elif depth_val == 1:
-                trial_cfg["widths"] = (64,)
-            else:
-                trial_cfg["widths"] = tuple([64] * depth_val)
+            trial_cfg["widths"] = tuple(max(8, base // (2 ** i)) for i in range(depth_val))
 
         elif vary == "width":
-            width_val = int(val_str)
-            depth_len = len(baseline_cfg["widths"])
-            trial_cfg["widths"] = tuple([width_val] * depth_len)
+            tuned = tuple(baseline_cfg["widths"])
+            tok = val_str.strip().lower()
+            if tok == "half":
+                factor = 0.5
+            elif tok == "double":
+                factor = 2.0
+            else:
+                try:
+                    factor = float(tok)
+                except ValueError:
+                    raise ValueError(
+                        f"width ablation expects 'half', 'double', or a numeric "
+                        f"factor; got {val_str!r}"
+                    )
+            trial_cfg["widths"] = tuple(max(8, round(w * factor)) for w in tuned)
 
         elif vary == "dropout":
             trial_cfg["dropout"] = float(val_str)
@@ -692,7 +697,7 @@ def run_ablation(
         if dry_run or not is_genuine_baseline:
             status = "DRY_RUN" if dry_run else "PLACEHOLDER"
             note = (
-                f"Dry-run planned experiment: vary {vary}={val_str}."
+                f"Dry-run planned experiment: vary {vary}={val_str} (widths={trial_cfg['widths']})."
                 if dry_run
                 else f"Placeholder record: awaiting Priyal's tuned configuration before executing {vary}={val_str}."
             )
@@ -702,12 +707,15 @@ def run_ablation(
                 _, h_status, h_note = evaluate_hybrid_validation()
                 note = h_note
 
+            setting_name = "baseline" if (vary == "model" and val_str.lower() == "mlp") else vary
+            setting_val = "tuned" if (vary == "model" and val_str.lower() == "mlp") else val_str
+
             row = {
                 "run_id": run_id,
                 "timestamp": trial_timestamp,
                 "status": status,
-                "setting": vary,
-                "value": val_str,
+                "setting": setting_name,
+                "value": setting_val,
                 "val_MAE": "NA",
                 "val_MAE_lo": "NA",
                 "val_MAE_hi": "NA",
@@ -723,7 +731,7 @@ def run_ablation(
                 "notes": note,
             }
             append_result_row(output_csv, row)
-            print(f"[{status}] Logged {vary}={val_str} -> {output_csv}")
+            print(f"[{status}] Logged {vary}={val_str} (widths={trial_cfg['widths']}) -> {output_csv}")
             continue
 
         # ----------------------------------------------------
@@ -731,8 +739,69 @@ def run_ablation(
         # ----------------------------------------------------
         if vary == "model":
             if val_str.lower() == "mlp":
-                print(f"[RUN] MLP model uses baseline reference setting.")
+                print(f"[RUN] Training tuned baseline model from {baseline_cfg['source_file']}...")
+                data = prepare_ablation_data(
+                    split_col="split",
+                    use_station_history=trial_cfg["use_station_history"],
+                    use_country=trial_cfg["use_country"],
+                )
+                t0 = time.time()
+                metrics, best_epoch, hist = train_ablation_model(
+                    data=data,
+                    cfg=trial_cfg,
+                    setting_name="baseline",
+                    setting_val="tuned",
+                    save_curve=True,
+                )
+                elapsed = time.time() - t0
+
+                obs_rmse = metrics["rmse"]
+                obs_mae = metrics["mae"]
+                obs_r2 = metrics["r2"]
+
+                print(f"[BASELINE] RMSE={obs_rmse:.4f} MAE={obs_mae:.4f} R2={obs_r2:.4f}")
+
+                exp_rmse = 11.231
+                exp_mae = 7.767
+                exp_r2 = 0.345
+
+                tol_rmse = abs(obs_rmse - exp_rmse) / exp_rmse
+                tol_mae = abs(obs_mae - exp_mae) / exp_mae
+                tol_r2 = abs(obs_r2 - exp_r2) / exp_r2
+
+                if tol_rmse <= 0.05 and tol_mae <= 0.05 and tol_r2 <= 0.05:
+                    print("[BASELINE-OK] within 5% of expected")
+                else:
+                    print(
+                        f"[BASELINE-MISMATCH] exceeds 5% tolerance "
+                        f"(RMSE: {obs_rmse:.4f} vs {exp_rmse:.4f} ({tol_rmse:.1%}), "
+                        f"MAE: {obs_mae:.4f} vs {exp_mae:.4f} ({tol_mae:.1%}), "
+                        f"R2: {obs_r2:.4f} vs {exp_r2:.4f} ({tol_r2:.1%}))"
+                    )
+
+                row = {
+                    "run_id": f"ablation_baseline_tuned_{trial_timestamp[:10]}",
+                    "timestamp": trial_timestamp,
+                    "status": "RUN",
+                    "setting": "baseline",
+                    "value": "tuned",
+                    "val_MAE": f"{metrics['mae']:.4f}",
+                    "val_MAE_lo": f"{metrics['mae_lo']:.4f}",
+                    "val_MAE_hi": f"{metrics['mae_hi']:.4f}",
+                    "val_RMSE": f"{metrics['rmse']:.4f}",
+                    "val_RMSE_lo": f"{metrics['rmse_lo']:.4f}",
+                    "val_RMSE_hi": f"{metrics['rmse_hi']:.4f}",
+                    "val_R2": f"{metrics['r2']:.4f}",
+                    "val_R2_lo": f"{metrics['r2_lo']:.4f}",
+                    "val_R2_hi": f"{metrics['r2_hi']:.4f}",
+                    "epochs_run": len(hist),
+                    "seed": seed,
+                    "config_hash": trial_hash,
+                    "notes": f"Tuned baseline trained in {elapsed:.1f}s, best epoch {best_epoch}.",
+                }
+                append_result_row(output_csv, row)
                 continue
+
             elif val_str.lower() == "hybrid":
                 metrics, h_status, h_notes = evaluate_hybrid_validation()
                 row = {

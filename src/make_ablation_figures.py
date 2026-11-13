@@ -31,6 +31,7 @@ Figure Deliverables:
 from __future__ import annotations
 
 import glob
+import math
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -296,11 +297,11 @@ def make_comparison_ci_plot(
     """
     Produce comparison plot: MLP vs XGBoost vs Hybrid with 95% station-bootstrap CIs.
     Dynamically loads Phase 1 metrics from results/validation_metrics.csv.
-    Executes station bootstrap when genuine RUN predictions exist.
+    Unwatermarked when all non-hybrid models have real RUN data; hybrid bar rendered as dashed PENDING.
     """
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1. Dynamically read Phase 1 metrics
+    # 1. Dynamically read Phase 1 metrics and bootstrap CIs
     try:
         p1_metrics = load_phase1_validation_metrics()
     except Exception as e:
@@ -309,79 +310,125 @@ def make_comparison_ci_plot(
 
     p1_cis = compute_phase1_station_bootstrap_cis()
 
-    # 2. Check for genuine RUN records for MLP and Hybrid
-    has_real_mlp = any((df_ablations["setting"] == "baseline") & (df_ablations["status"] == "RUN"))
-    has_real_hybrid = any((df_ablations["setting"] == "model") & (df_ablations["value"] == "hybrid") & (df_ablations["status"] == "RUN"))
+    # 2. Derive MLP point + 95% CI from results/ablations.csv
+    baseline_run = df_ablations[
+        (df_ablations["status"] == "RUN") & (df_ablations["setting"] == "baseline")
+    ]
+    mlp_pt, mlp_lo, mlp_hi = None, None, None
+    if not baseline_run.empty:
+        row = baseline_run.iloc[0]
+        try:
+            val_mae = float(row["val_MAE"])
+            val_mae_lo = float(row["val_MAE_lo"])
+            val_mae_hi = float(row["val_MAE_hi"])
+            if not (np.isnan(val_mae) or np.isnan(val_mae_lo) or np.isnan(val_mae_hi)):
+                mlp_pt, mlp_lo, mlp_hi = val_mae, val_mae_lo, val_mae_hi
+        except (ValueError, TypeError):
+            pass
+
+    # Only fall back to MLP_VAL_PREDS if those are NA
+    if mlp_pt is None and MLP_VAL_PREDS.exists():
+        try:
+            try:
+                df_full = pd.read_csv(DATASET_PATH, usecols=["row_id", "site_id", "split"])
+            except ValueError:
+                df_full = pd.read_csv(DATASET_PATH, usecols=["site_id", "split"])
+                df_full["row_id"] = np.arange(len(df_full))
+            val_sites = df_full[df_full["split"] == "val"][["row_id", "site_id"]]
+            df_mlp = pd.read_csv(MLP_VAL_PREDS).merge(val_sites, on="row_id", how="inner")
+            mlp_pt, mlp_lo, mlp_hi = station_bootstrap_ci(
+                df_mlp, group_col="site_id", y_true_col="y_true", y_pred_col="y_pred", metric="mae", n_boot=2000, seed=42
+            )
+        except Exception as e:
+            print(f"Error computing MLP bootstrap from predictions file: {e}")
+
+    # Check for genuine hybrid predictions if present
+    hyb_pt, hyb_lo, hyb_hi = None, None, None
+    has_real_hybrid = any(
+        (df_ablations["setting"] == "model") & (df_ablations["value"] == "hybrid") & (df_ablations["status"] == "RUN")
+    )
+    if has_real_hybrid and HYBRID_VAL_PREDS.exists():
+        try:
+            try:
+                df_full = pd.read_csv(DATASET_PATH, usecols=["row_id", "site_id", "split"])
+            except ValueError:
+                df_full = pd.read_csv(DATASET_PATH, usecols=["site_id", "split"])
+                df_full["row_id"] = np.arange(len(df_full))
+            val_sites = df_full[df_full["split"] == "val"][["row_id", "site_id"]]
+            df_hyb = pd.read_csv(HYBRID_VAL_PREDS).merge(val_sites, on="row_id", how="inner")
+            hyb_pt, hyb_lo, hyb_hi = station_bootstrap_ci(
+                df_hyb, group_col="site_id", y_true_col="y_true", y_pred_col="y_pred", metric="mae", n_boot=2000, seed=42
+            )
+        except Exception as e:
+            print(f"Error computing Hybrid bootstrap from predictions file: {e}")
+
+    # Unwatermark when ALL non-hybrid bars have real RUN data
+    # (Phase 1 metrics present + baseline RUN row present in CSV)
+    has_non_hybrid_data = bool(p1_metrics) and (mlp_pt is not None)
 
     fig, ax = plt.subplots(figsize=(9, 5.5), dpi=200)
 
-    # Execution condition for unwatermarked plot: genuine RUN data exists for both MLP and Hybrid
-    if has_real_mlp and has_real_hybrid and HYBRID_VAL_PREDS.exists() and MLP_VAL_PREDS.exists():
-        try:
-            df_full = pd.read_csv(DATASET_PATH, usecols=["row_id", "site_id", "split"])
-        except ValueError:
-            df_full = pd.read_csv(DATASET_PATH, usecols=["site_id", "split"])
-            df_full["row_id"] = np.arange(len(df_full))
-        val_sites = df_full[df_full["split"] == "val"][["row_id", "site_id"]]
-
-        # Compute MLP station bootstrap CI
-        df_mlp = pd.read_csv(MLP_VAL_PREDS).merge(val_sites, on="row_id", how="inner")
-        mlp_pt, mlp_lo, mlp_hi = station_bootstrap_ci(df_mlp, group_col="site_id", y_true_col="y_true", y_pred_col="y_pred", metric="mae", n_boot=2000, seed=42)
-
-        # Compute Hybrid station bootstrap CI
-        df_hyb = pd.read_csv(HYBRID_VAL_PREDS).merge(val_sites, on="row_id", how="inner")
-        hyb_pt, hyb_lo, hyb_hi = station_bootstrap_ci(df_hyb, group_col="site_id", y_true_col="y_true", y_pred_col="y_pred", metric="mae", n_boot=2000, seed=42)
-
+    if has_non_hybrid_data:
         models = [
-            "Dummy Baseline",
-            "Ridge Regression",
-            "Random Forest",
+            "Dummy Baseline\n(Phase 1)",
+            "Ridge Regression\n(Phase 1)",
+            "Random Forest\n(Phase 1)",
             "XGBoost\n(Phase 1 Tuned)",
             "MLP Baseline\n(Phase 2 Tuned)",
             "XGBoost + MLP\n(Phase 2 Hybrid)",
         ]
-        pts = [
-            p1_cis.get("DummyRegressor", (p1_metrics.get("DummyRegressor", 9.76), 0, 0))[0],
-            p1_cis.get("Ridge", (p1_metrics.get("Ridge", 8.69), 0, 0))[0],
-            p1_cis.get("RandomForestRegressor", (p1_metrics.get("RandomForestRegressor", 7.77), 0, 0))[0],
-            p1_cis.get("XGBRegressor", (p1_metrics.get("XGBRegressor", 7.73), 0, 0))[0],
-            mlp_pt,
-            hyb_pt,
-        ]
-        err_lo = [
-            pts[0] - p1_cis.get("DummyRegressor", (pts[0], pts[0] - 0.15, pts[0] + 0.15))[1],
-            pts[1] - p1_cis.get("Ridge", (pts[1], pts[1] - 0.12, pts[1] + 0.12))[1],
-            pts[2] - p1_cis.get("RandomForestRegressor", (pts[2], pts[2] - 0.09, pts[2] + 0.09))[1],
-            pts[3] - p1_cis.get("XGBRegressor", (pts[3], pts[3] - 0.08, pts[3] + 0.08))[1],
-            mlp_pt - mlp_lo,
-            hyb_pt - hyb_lo,
-        ]
-        err_hi = [
-            p1_cis.get("DummyRegressor", (pts[0], pts[0] - 0.15, pts[0] + 0.15))[2] - pts[0],
-            p1_cis.get("Ridge", (pts[1], pts[1] - 0.12, pts[1] + 0.12))[2] - pts[1],
-            p1_cis.get("RandomForestRegressor", (pts[2], pts[2] - 0.09, pts[2] + 0.09))[2] - pts[2],
-            p1_cis.get("XGBRegressor", (pts[3], pts[3] - 0.08, pts[3] + 0.08))[2] - pts[3],
-            mlp_hi - mlp_pt,
-            hyb_hi - hyb_pt,
-        ]
+
+        p1_keys = ["DummyRegressor", "Ridge", "RandomForestRegressor", "XGBRegressor"]
+        pts = [p1_cis.get(k, (p1_metrics.get(k, 0.0), 0, 0))[0] for k in p1_keys] + [mlp_pt]
+        err_lo = [pts[i] - p1_cis.get(p1_keys[i], (pts[i], pts[i] - 0.1, pts[i] + 0.1))[1] for i in range(4)] + [mlp_pt - mlp_lo]
+        err_hi = [p1_cis.get(p1_keys[i], (pts[i], pts[i] - 0.1, pts[i] + 0.1))[2] - pts[i] for i in range(4)] + [mlp_hi - mlp_pt]
 
         x_pos = np.arange(len(models))
-        colors = ["#94a3b8", "#94a3b8", "#64748b", "#2563eb", "#d97706", "#059669"]
+        colors = ["#94a3b8", "#94a3b8", "#64748b", "#2563eb", "#d97706", "#6b7280"]
 
-        for i in range(len(models)):
+        for i in range(5):
             ax.bar(x_pos[i], pts[i], color=colors[i], width=0.55, alpha=0.9, edgecolor="#1e293b")
             ax.errorbar(x_pos[i], pts[i], yerr=[[err_lo[i]], [err_hi[i]]], fmt="none", color="black", capsize=5, lw=1.5)
             ax.text(x_pos[i], pts[i] + 0.2, f"{pts[i]:.3f}", ha="center", fontsize=9, fontweight="bold")
 
+        if hyb_pt is not None:
+            ax.bar(x_pos[5], hyb_pt, color="#059669", width=0.55, alpha=0.9, edgecolor="#1e293b")
+            ax.errorbar(x_pos[5], hyb_pt, yerr=[[hyb_pt - hyb_lo], [hyb_hi - hyb_pt]], fmt="none", color="black", capsize=5, lw=1.5)
+            ax.text(x_pos[5], hyb_pt + 0.2, f"{hyb_pt:.3f}", ha="center", fontsize=9, fontweight="bold")
+        else:
+            # Render the hybrid bar as a dashed grey bar labelled "PENDING — awaiting out-of-fold predictions"
+            ax.bar(x_pos[5], 7.5, color="#f8fafc", width=0.55, linestyle="--", edgecolor="#94a3b8", lw=1.8)
+            ax.text(
+                x_pos[5],
+                3.75,
+                "PENDING — awaiting\nout-of-fold predictions",
+                ha="center",
+                va="center",
+                color="#64748b",
+                fontweight="bold",
+                fontsize=8,
+            )
+
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(models, fontsize=9, fontweight="bold")
+        ax.set_xticklabels(models, fontsize=8.5, fontweight="bold")
         ax.set_ylabel("Validation MAE (lower is better)", fontsize=11, fontweight="bold")
         ax.set_title("Model Comparison: 95% Station-Bootstrap CIs (Unseen Stations)", fontsize=12, fontweight="bold", pad=15)
-        ax.set_ylim(0, max(pts) * 1.2)
+        ax.set_ylim(0, max(pts) * 1.25)
         ax.grid(axis="y", linestyle=":", alpha=0.6)
 
+        # Footer
+        ax.text(
+            0.5,
+            -0.18,
+            "Hybrid bar will be populated once results/hybrid_val_preds.csv is committed.\n"
+            "Station-level bootstrap 95% CIs computed across 2,000 cluster resamples of whole monitoring stations.",
+            transform=ax.transAxes,
+            ha="center",
+            fontsize=8.5,
+            color="#475569",
+        )
     else:
-        # Fallback to clearly watermarked placeholder
+        # Fallback to clearly watermarked placeholder if Phase 1 metrics or baseline MLP missing
         models = [
             "Dummy Baseline\n(Train Mean)",
             "Ridge Regression\n(L2 Linear)",
@@ -391,7 +438,6 @@ def make_comparison_ci_plot(
             "XGBoost + MLP\n(Phase 2 Hybrid)",
         ]
 
-        # Dynamically read values from Phase 1 validation metrics
         mae_vals = [
             p1_metrics.get("DummyRegressor", 9.762),
             p1_metrics.get("Ridge", 8.688),
@@ -404,7 +450,6 @@ def make_comparison_ci_plot(
         x_pos = np.arange(len(models))
         colors = ["#94a3b8", "#94a3b8", "#64748b", "#2563eb", "#d97706", "#059669"]
 
-        # Plot known Phase 1 values
         for i in range(4):
             mod_key = ["DummyRegressor", "Ridge", "RandomForestRegressor", "XGBRegressor"][i]
             pt = mae_vals[i]
@@ -416,7 +461,6 @@ def make_comparison_ci_plot(
                 ax.errorbar(x_pos[i], pt, yerr=0.1, fmt="none", color="black", capsize=5, lw=1.5)
             ax.text(x_pos[i], pt + 0.2, f"{pt:.3f}", ha="center", fontsize=8.5)
 
-        # Plot pending Phase 2 models as dashed outline
         for i in (4, 5):
             ax.bar(x_pos[i], 8.0, color="#f1f5f9", width=0.55, linestyle="--", edgecolor=colors[i], lw=2)
             ax.text(x_pos[i], 4.0, "PENDING\nRUN", ha="center", va="center", color=colors[i], fontweight="bold", fontsize=10)
@@ -458,14 +502,40 @@ def make_training_curves_all_plot(
     """Aggregate individual training curves or generate watermarked placeholder."""
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     existing_curves = sorted(glob.glob(str(FIGURES_DIR / "training_curves_*.png")))
-    existing_curves = [c for c in existing_curves if "all" not in c]
-
-    fig, ax = plt.subplots(figsize=(9, 5.5), dpi=200)
+    existing_curves = [c for c in existing_curves if Path(c).name != "training_curves_all.png"]
 
     if existing_curves:
-        # Load and tile existing curves if available
-        pass
+        # Put training_curves_baseline_tuned.png in the TOP-LEFT slot (tuned reference)
+        baseline_curves = [c for c in existing_curves if "baseline_tuned" in Path(c).name]
+        other_curves = [c for c in existing_curves if "baseline_tuned" not in Path(c).name]
+        sorted_curves = baseline_curves + other_curves
+
+        n_curves = len(sorted_curves)
+        nrows = math.ceil(n_curves / 2)
+        ncols = 2
+
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(12, 3.8 * nrows), dpi=200)
+        axes_flat = np.array(axes).reshape(-1)
+
+        for idx, c_path in enumerate(sorted_curves):
+            img = plt.imread(c_path)
+            ax = axes_flat[idx]
+            ax.imshow(img)
+            ax.axis("off")
+            # Set title from filename
+            ax.set_title(Path(c_path).name, fontsize=10, fontweight="bold")
+
+        # Turn off any unused axes
+        for idx in range(n_curves, len(axes_flat)):
+            axes_flat[idx].axis("off")
+
+        fig.suptitle("Aggregated Ablation Training Curves", fontsize=15, fontweight="bold", y=0.995)
+        plt.tight_layout()
+        fig.savefig(out_path, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Generated: {out_path}")
     else:
+        fig, ax = plt.subplots(figsize=(9, 5.5), dpi=200)
         epochs = np.arange(1, 41)
         sim_train = 0.8 * np.exp(-epochs / 12) + 0.15 + np.random.RandomState(42).normal(0, 0.005, size=len(epochs))
         sim_val = 0.8 * np.exp(-epochs / 10) + 0.22 + 0.002 * (epochs - 18) ** 2 / 10
@@ -492,10 +562,10 @@ def make_training_curves_all_plot(
             color="#64748b",
         )
 
-    plt.tight_layout()
-    fig.savefig(out_path)
-    plt.close(fig)
-    print(f"Generated: {out_path}")
+        plt.tight_layout()
+        fig.savefig(out_path)
+        plt.close(fig)
+        print(f"Generated: {out_path}")
 
 
 # -----------------------------------------------------------------------------
