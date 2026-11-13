@@ -28,41 +28,43 @@ All runs fix seed 42, logging results to an append-only ledger (`results/ablatio
 
 ## 3. Consolidated Ablation Results Table
 
-The table below presents the consolidated validation performance across all ablation axes. All metrics report the point estimate accompanied by two-sided 95% station-bootstrap confidence intervals ($[\text{lo}, \text{hi}]$) derived from 2,000 cluster draws.
+The table below presents the consolidated validation performance across all ablation axes. All metrics report the point estimate accompanied by two-sided 95% station-bootstrap confidence intervals ($[\text{lo}, \text{hi}]$) derived from 2,000 cluster draws. Every row was trained with the same code, seed and data split as the tuned baseline, changing exactly one setting.
 
 | Setting | Value | Val MAE [95% CI] | Val RMSE [95% CI] | Val R² [95% CI] |
 |---|---|---|---|---|
-| **Tuned Baseline** | Reference (128-64, drop 0.2, wd 1e-4) | 7.793 [7.146, 8.529] | 11.246 [10.383, 12.248] | 0.343 [0.278, 0.393] |
-| **Depth** | 1 layer (128) | 7.823 [7.168, 8.587] | 11.369 [10.468, 12.422] | 0.329 [0.270, 0.376] |
-| **Depth** | 2 layers (128, 64) [Tuned] | 7.793 [7.146, 8.529] | 11.246 [10.383, 12.248] | 0.343 [0.278, 0.393] |
-| **Depth** | 3 layers (128, 64, 32) | 7.891 [7.258, 8.603] | 11.269 [10.414, 12.258] | 0.340 [0.274, 0.391] |
-| **Width** | Half (64, 32) | 7.924 [7.302, 8.633] | 11.295 [10.456, 12.261] | 0.337 [0.272, 0.389] |
-| **Width** | Double (256, 128) | 7.835 [7.224, 8.505] | 11.223 [10.444, 12.112] | 0.346 [0.267, 0.406] |
-| **Dropout** | 0.0 (Disabled) | 7.672 [7.028, 8.410] | 11.241 [10.362, 12.214] | 0.344 [0.279, 0.397] |
-| **Dropout** | 0.2 (Enabled) [Tuned] | 7.793 [7.146, 8.529] | 11.246 [10.383, 12.248] | 0.343 [0.278, 0.393] |
-| **Weight Decay** | 0.0 (Disabled) | 7.785 [7.143, 8.505] | 11.243 [10.391, 12.235] | 0.343 [0.277, 0.393] |
-| **Weight Decay** | 1e-4 (Enabled) [Tuned] | 7.793 [7.146, 8.529] | 11.246 [10.383, 12.248] | 0.343 [0.278, 0.393] |
-| **Station History** | true (Included) [Tuned] | 7.793 [7.146, 8.529] | 11.246 [10.383, 12.248] | 0.343 [0.278, 0.393] |
-| **Station History** | false (Excluded) | 8.181 [7.486, 9.039] | 11.889 [10.877, 13.098] | 0.266 [0.213, 0.306] |
-| **Country** | true (Included) [Tuned] | 7.793 [7.146, 8.529] | 11.246 [10.383, 12.248] | 0.343 [0.278, 0.393] |
-| **Country** | false (Excluded) | 8.237 [7.616, 8.998] | 11.723 [10.862, 12.736] | 0.286 [0.217, 0.338] |
-| **Model** | hybrid (PENDING: awaiting results/hybrid_val_preds.csv from Anusha/Priyal) | NA | NA | NA |
+| **Tuned Baseline** | Reference (128-64, drop 0.2, wd 1e-4) | 7.767 [7.118, 8.503] | 11.231 [10.374, 12.216] | 0.345 [0.280, 0.396] |
+| **Depth** | 1 layer (128) | 7.824 [7.174, 8.586] | 11.369 [10.470, 12.422] | 0.329 [0.270, 0.376] |
+| **Depth** | 2 layers (128, 64) [Tuned] | 7.767 [7.118, 8.503] | 11.231 [10.374, 12.216] | 0.345 [0.280, 0.396] |
+| **Depth** | 3 layers (128, 64, 32) | 7.897 [7.263, 8.623] | 11.279 [10.423, 12.281] | 0.339 [0.274, 0.390] |
+| **Width** | Half (64, 32) | 7.914 [7.295, 8.624] | 11.284 [10.440, 12.254] | 0.339 [0.273, 0.390] |
+| **Width** | Double (256, 128) | 7.890 [7.266, 8.615] | 11.273 [10.425, 12.278] | 0.340 [0.275, 0.389] |
+| **Dropout** | 0.0 (Disabled) | 7.665 [7.016, 8.406] | 11.245 [10.366, 12.230] | 0.343 [0.280, 0.396] |
+| **Dropout** | 0.2 (Enabled) [Tuned] | 7.767 [7.118, 8.503] | 11.231 [10.374, 12.216] | 0.345 [0.280, 0.396] |
+| **Weight Decay** | 0.0 (Disabled) | 7.803 [7.156, 8.528] | 11.245 [10.398, 12.213] | 0.343 [0.278, 0.395] |
+| **Weight Decay** | 1e-4 (Enabled) [Tuned] | 7.767 [7.118, 8.503] | 11.231 [10.374, 12.216] | 0.345 [0.280, 0.396] |
+| **Station History** | true (Included) [Tuned] | 7.767 [7.118, 8.503] | 11.231 [10.374, 12.216] | 0.345 [0.280, 0.396] |
+| **Station History** | false (Excluded) | 8.115 [7.418, 8.989] | 11.878 [10.829, 13.124] | 0.267 [0.218, 0.306] |
+| **Country** | true (Included) [Tuned] | 7.767 [7.118, 8.503] | 11.231 [10.374, 12.216] | 0.345 [0.280, 0.396] |
+| **Country** | false (Excluded) | 8.241 [7.619, 9.008] | 11.733 [10.868, 12.761] | 0.285 [0.218, 0.337] |
+| **Model** | hybrid (PENDING: awaiting results/hybrid_val_preds.csv) | NA | NA | NA |
 
-*Note: The hybrid model row remains PENDING with NA metrics, awaiting out-of-fold validation predictions from Anusha and Priyal (`results/hybrid_val_preds.csv`). No hybrid numbers are fabricated.*
+*Note: The hybrid model row remains PENDING with NA metrics, awaiting out-of-fold validation predictions (`results/hybrid_val_preds.csv`). No hybrid numbers are fabricated.*
 
 ---
 
 ## 4. Empirical Findings
 
-Systematic evaluation across each isolated axis reveals clear structural and domain dynamics:
+Differences below are measured against the tuned baseline (RMSE 11.231, MAE 7.767, R² 0.345). The confidence intervals in the table are computed separately for each model, so they overlap whenever two models are close. We therefore read overlapping intervals as "no clear difference", not as proof of equality.
 
-- **Architectural Depth (1 vs. 2 vs. 3 Layers):** The 2-layer pyramid (128, 64) achieves validation RMSE 11.246 [10.383, 12.248], compared to 11.369 [10.468, 12.422] for 1 layer ($\Delta = -0.123$) and 11.269 [10.414, 12.258] for 3 layers ($\Delta = -0.023$). Although depth 2 achieves the lowest point RMSE, 95% bootstrap confidence intervals overlap substantially across all three depths. Consequently, depths 1, 2, and 3 are **statistically indistinguishable under station-bootstrap CIs**, indicating that depth beyond 2 layers offers no abstraction advantage on this 14-input tabular manifold.
-- **Layer Width (Half vs. Tuned vs. Double):** Compressing width to half (64, 32) yields RMSE 11.295 [10.456, 12.261], whereas doubling width to (256, 128) achieves 11.223 [10.444, 12.112] ($\Delta = -0.023$ relative to tuned 11.246). Due to broad CI overlap, width scaling is statistically indistinguishable under station-bootstrap CIs. The tuned baseline (128, 64) occupies the **sweet spot**, maximising parameter efficiency without unnecessary computational overhead.
-- **Stochastic Regularisation (Dropout 0.0 vs. 0.2):** Disabling dropout yields RMSE 11.241 [10.362, 12.214] and MAE 7.672 [7.028, 8.410], versus 11.246 and 7.793 with 20% dropout ($\Delta \text{MAE} = -0.121$, $\Delta \text{RMSE} = -0.005$). While point errors are slightly lower without dropout, both settings are statistically indistinguishable under station-bootstrap CIs. In low-dimensional tabular regimes, early stopping regularises adequately, rendering dropout unhelpful.
-- **Weight Decay ($0.0$ vs. $10^{-4}$):** Unregularized Adam ($L_2 = 0$) achieves RMSE 11.243 [10.391, 12.235] and MAE 7.785 [7.143, 8.505], essentially identical to $10^{-4}$ weight decay ($\Delta \text{RMSE} = +0.003$, $\Delta \text{MAE} = +0.008$). The difference is statistically indistinguishable under station-bootstrap CIs, showing $L_2$ shrinkage has minimal effect given early stopping.
-- **Station History Attribution (True vs. False):** Removing historical past-mean sensor features causes severe degradation: validation RMSE deteriorates from 11.246 to 11.889 [10.877, 13.098] ($\Delta = +0.643$), and $R^2$ collapses from 0.343 to 0.266 [0.213, 0.306] ($\Delta = -0.077$). This directly mirrors Phase 1 XGBoost ablations where removing station history dropped $R^2$ from 0.348 to 0.271, proving that local temporal persistence is a foundational predictor across both tree and neural model families.
-- **Country Indicator Attribution (True vs. False):** Omitting regional country indicators increases RMSE from 11.246 to 11.723 [10.862, 12.736] ($\Delta = +0.478$) and degrades $R^2$ from 0.343 to 0.286 [0.217, 0.338] ($\Delta = -0.057$). Macro-geographical indicators provide vital baseline calibration across jurisdictions.
-- **Model Formulation (MLP vs. Hybrid):** The standalone tuned MLP achieves $R^2 = 0.343$ [0.278, 0.393] and RMSE 11.246. Comparative evaluation against the hybrid ensemble remains strictly **pending Anusha's out-of-fold predictions** (`results/hybrid_val_preds.csv`).
+- **Architectural depth (1, 2 or 3 layers):** The tuned 2-layer network (128, 64) has the lowest validation RMSE (11.231). One layer gives 11.369 (+0.138) and three layers give 11.279 (+0.048). The intervals overlap heavily, so there is no clear evidence that more depth helps on this 14-input table; a single hidden layer is only slightly worse.
+- **Layer width (half, tuned, double):** Half width (64, 32) gives RMSE 11.284 (+0.053) and double width (256, 128) gives 11.273 (+0.042). Both are marginally worse than the tuned size and well within each other's intervals, so extra capacity brings no benefit and the tuned size is a reasonable choice.
+- **Dropout (0.0 vs 0.2):** Removing dropout gives RMSE 11.245 (+0.014) and MAE 7.665 (-0.102). The RMSE is not better and the MAE is slightly lower, but both are inside the intervals. Dropout is therefore low-impact here; early stopping already limits overfitting.
+- **Weight decay (0.0 vs 1e-4):** Without weight decay the RMSE is 11.245 (+0.014) and the MAE is 7.803 (+0.035). The difference is negligible, so L2 shrinkage has little effect when early stopping is used.
+- **Station history (included vs excluded):** This is the largest effect in the study. Without it RMSE rises from 11.231 to 11.878 (+0.647), MAE from 7.767 to 8.115, and R² falls from 0.345 to 0.267 (-0.078). This matches Phase 1, where removing station history dropped the XGBoost R² from 0.348 to 0.271. The two intervals still overlap because they are computed separately; since both models are scored on the same stations, a paired bootstrap of the difference would be tighter and is the right test to confirm it.
+- **Country indicator (included vs excluded):** Without country, RMSE rises from 11.231 to 11.733 (+0.502), MAE from 7.767 to 8.241, and R² falls from 0.345 to 0.285 (-0.060). Phase 1 XGBoost showed a similar drop (R² 0.348 to 0.274). The same note about overlapping separate intervals applies.
+- **Model formulation (MLP vs hybrid):** The standalone tuned MLP gives R² 0.345 and RMSE 11.231. The comparison with the hybrid is pending the out-of-fold predictions (`results/hybrid_val_preds.csv`).
+
+**Summary:** the inputs matter far more than the network design. Station history and country each cost clearly more than any change to depth, width, dropout or weight decay, and none of those four settings moved the result by more than about 0.14 RMSE.
 
 ---
 

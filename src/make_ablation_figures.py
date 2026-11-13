@@ -1,10 +1,4 @@
 """
-src/make_ablation_figures.py
-============================
-Generate ablation study figures for Phase 2 Deep Learning evaluation.
-Author: Sarthak Mathapati (Role: Ablation Studies)
-Team: T109 (Project 18)
-
 Figure Deliverables:
 --------------------
 1. results/figures/ablation_mae.png

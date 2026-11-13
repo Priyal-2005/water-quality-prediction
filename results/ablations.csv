@@ -1,5 +1,4 @@
 run_id,timestamp,status,setting,value,val_MAE,val_MAE_lo,val_MAE_hi,val_RMSE,val_RMSE_lo,val_RMSE_hi,val_R2,val_R2_lo,val_R2_hi,epochs_run,seed,config_hash,notes
-ablation_baseline_ref_2026-11-13,2026-11-13T15:28:13.763003+00:00,PLACEHOLDER,baseline,reference,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,42,a09f12cdc01d,Pending baseline reference; run --vary model --values mlp to train the tuned baseline.
 ablation_depth_1_20261113_152813,2026-11-13T15:28:13.809141+00:00,RUN,depth,1,7.8245,7.1744,8.5862,11.3688,10.4700,12.4222,0.3286,0.2697,0.3755,28,42,880f2fa472ab,"Trained in 15.8s, best epoch 18."
 ablation_depth_2_20261113_152832,2026-11-13T15:28:32.109387+00:00,RUN,depth,2,7.7673,7.1183,8.5026,11.2311,10.3740,12.2159,0.3447,0.2802,0.3958,29,42,a09f12cdc01d,"Trained in 18.3s, best epoch 19."
 ablation_depth_3_20261113_152852,2026-11-13T15:28:52.954996+00:00,RUN,depth,3,7.8966,7.2634,8.6228,11.2788,10.4230,12.2811,0.3392,0.2738,0.3895,29,42,36922527827b,"Trained in 19.1s, best epoch 19."
