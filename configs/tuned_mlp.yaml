@@ -1,0 +1,30 @@
+# (trial 0 of 13, chosen by lowest validation RMSE 11.231; see results/dl/experiments_dl.csv).
+# Used as the baseline for the ablation studies (src/ablations.py).
+
+model_name: "mlp_tuned"
+status: "TUNED"
+
+# Architecture: 30 inputs -> 128 -> 64 -> 1
+hidden_layers: [128, 64]
+dropout: 0.2
+weight_decay: 0.0001
+batch_norm: false
+
+# Feature inclusion flags (both on in the tuned model)
+use_station_history: true
+use_country: true
+
+# Optimisation
+batch_size: 512
+lr: 0.001
+loss: "mse"
+epochs: 60
+early_stopping:
+  enabled: true
+  patience: 10
+
+# Data and environment
+seed: 42
+split_col: "split"
+target_col: "target_ccme_value"
+station_id_col: "site_id"

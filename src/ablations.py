@@ -116,7 +116,6 @@ SEED = 42
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = ROOT / "configs" / "tuned_mlp.yaml"
-FALLBACK_SCAFFOLD_PATH = ROOT / "configs" / "ablation_baseline.yaml"
 DEFAULT_OUTPUT_CSV = ROOT / "results" / "ablations.csv"
 FIGURES_DIR = ROOT / "results" / "figures"
 HYBRID_PREDS_PATH = ROOT / "results" / "hybrid_val_preds.csv"
@@ -141,11 +140,9 @@ def load_baseline_config(config_path: Optional[Path] = None) -> Tuple[Dict[str, 
     if config_path is None or not config_path.exists():
         if DEFAULT_CONFIG_PATH.exists():
             target_path = DEFAULT_CONFIG_PATH
-        elif FALLBACK_SCAFFOLD_PATH.exists():
-            target_path = FALLBACK_SCAFFOLD_PATH
         else:
             raise FileNotFoundError(
-                f"No configuration file found at {DEFAULT_CONFIG_PATH} or {FALLBACK_SCAFFOLD_PATH}."
+                f"No configuration file found at {DEFAULT_CONFIG_PATH}."
             )
     else:
         target_path = Path(config_path)
@@ -813,8 +810,8 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default=str(DEFAULT_CONFIG_PATH) if DEFAULT_CONFIG_PATH.exists() else str(FALLBACK_SCAFFOLD_PATH),
-        help="Path to baseline YAML config (default: configs/tuned_mlp.yaml or configs/ablation_baseline.yaml).",
+        default=str(DEFAULT_CONFIG_PATH),
+        help="Path to baseline YAML config (default: configs/tuned_mlp.yaml).",
     )
     parser.add_argument(
         "--vary",
