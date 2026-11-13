@@ -1,0 +1,43 @@
+# ==============================================================================
+# configs/ablation_baseline.yaml
+# ==============================================================================
+# STATUS: PLACEHOLDER (Scaffolding / Dry-Run Only)
+# OWNER: Sarthak Mathapati (Ablation Studies Scaffolding)
+#
+# IMPORTANT NOTICE:
+# Replace with Priyal’s tuned config when available. Do not report as tuned baseline.
+# Never treat configs/ablation_baseline.yaml as Priyal's tuned configuration.
+# It is a scaffolding/dry-run placeholder only. Never train it and report it as
+# the tuned baseline.
+# ==============================================================================
+
+model_name: "mlp_ablation_placeholder"
+status: "PLACEHOLDER"
+
+# Architecture settings
+hidden_layers: [64, 64]
+dropout: 0.2
+weight_decay: 0.0001
+batch_norm: false
+
+# Feature inclusion flags
+use_station_history: true
+use_country: true
+
+# Optimization parameters
+batch_size: 32
+lr: 0.001
+loss: "mse"
+epochs: 100
+early_stopping:
+  enabled: true
+  patience: 10
+
+# Data and environment
+seed: 42
+split_col: "split"
+target_col: "target_ccme_value"
+station_id_col: "site_id"
+
+notes: "Scaffolding configuration only. Replace with Priyal's tuned config (configs/tuned_mlp.yaml) when available. Do not report as tuned baseline."
+
