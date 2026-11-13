@@ -4,7 +4,7 @@
 
 In tabular deep learning, standard benchmarks frequently obscure whether performance changes stem from network capacity, regularisation, feature subsets, or ensembling. This ablation study systematically isolates and quantifies the marginal impact of each key design choice in our Phase 2 Multilayer Perceptron (MLP) architecture.
 
-Adhering strictly to a One-Factor-At-A-Time (OFAT) protocol, we mutate exactly one setting at a time from Priyal's tuned baseline across six targeted axes:
+Adhering strictly to a One-Factor-At-A-Time (OFAT) protocol, we mutate exactly one setting at a time from the tuned baseline across six targeted axes:
 1. **Hierarchical Depth:** 1, 2, or 3 hidden layers via geometric pyramid.
 2. **Channel Capacity:** Half, tuned, and double layer widths.
 3. **Stochastic Regularisation:** Dropout on (0.2) versus off (0.0).
@@ -17,7 +17,7 @@ Adhering strictly to a One-Factor-At-A-Time (OFAT) protocol, we mutate exactly o
 ## 2. Experimental Setup & Protocol
 
 The ablation pipeline enforces four core controls to guarantee out-of-station validity and continuity with Phase 1:
-- **Validation Partition Isolation:** Every ablation trial is evaluated strictly on the 10% station validation set (`split == 'val'`), comprising 26,054 rows from 1,136 distinct monitoring stations. The 20% test partition is strictly locked for Anusha's final evaluation; Sarthak never evaluates on test data.
+- **Validation Partition Isolation:** Every ablation trial is evaluated strictly on the 10% station validation set (`split == 'val'`), comprising 26,054 rows from 1,136 distinct monitoring stations. The 20% test partition is strictly locked for the one-time final evaluation; no ablation trial touches test data.
 - **Station Independence:** Splitting is partitioned by `site_id` with zero station overlap across splits ($\text{Train} \cap \text{Val} = \emptyset$).
 - **Hidden Chemical Exclusion:** The five driving ions (`ammonia_mg_l`, `bod_mg_l`, `orthophosphate_mg_l`, `nitrogen_mg_l`, `nitrate_mg_l`) remain strictly excluded from model inputs.
 - **Station-Bootstrap Confidence Intervals:** Standard errors and 95% confidence intervals resample entire physical monitoring stations (`site_id`) with replacement over 2,000 draws to capture spatial autocorrelation.
@@ -73,4 +73,4 @@ Differences below are measured against the tuned baseline (RMSE 11.231, MAE 7.76
 1. **Discrete Grid Resolution:** Evaluating isolated settings explores orthogonal axes rather than continuous response surfaces.
 2. **Validation Partition Variance:** While the validation split contains 26,054 rows from 1,136 distinct monitoring stations, localized sensor calibration quirks introduce sampling variance.
 3. **Tabular Inductive Biases:** Prior literature demonstrates that tree ensembles partition tabular spaces naturally. Model accuracy is primarily bounded by domain feature representation rather than neural capacity.
-4. **Hybrid Protocol Dependency:** Hybrid benchmarking requires genuine out-of-fold predictions to prevent optimistic leakage; until Anusha delivers verified predictions, ensembling claims remain unverified.
+4. **Hybrid Protocol Dependency:** Hybrid benchmarking requires genuine out-of-fold predictions to prevent optimistic leakage; until verified out-of-fold predictions are available, ensembling claims remain unverified.

@@ -214,7 +214,7 @@ def make_ablation_mae_plot(
         ax.text(
             0.5,
             -0.12,
-            "Awaiting Priyal's tuned baseline (configs/tuned_mlp.yaml) before populating real metrics.",
+            "Awaiting the tuned baseline (configs/tuned_mlp.yaml) before populating real metrics.",
             transform=ax.transAxes,
             ha="center",
             fontsize=9.5,
@@ -472,7 +472,7 @@ def make_comparison_ci_plot(
             0.5,
             -0.18,
             "Station-level bootstrap CIs (2,000 resamples of whole stations) will evaluate\n"
-            "upon receiving Priyal's tuned MLP predictions and Anusha's hybrid predictions.\n"
+            "upon receiving the tuned MLP predictions and the hybrid predictions.\n"
             "Phase 1 metrics dynamically loaded from results/validation_metrics.csv.",
             transform=ax.transAxes,
             ha="center",
