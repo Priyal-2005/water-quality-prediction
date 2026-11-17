@@ -219,9 +219,24 @@ python -m src.hybrid                   # add --oof for the residual-variant diag
 
 # 4. Final evaluation: test set scored once, with confidence intervals
 #    run notebooks/08_dl_evaluation.ipynb
+
+# 5. Leakage check (validation only): what if the five main chemicals are allowed?
+#    run notebooks/09_leakage_check.ipynb (about 6 minutes)
 ```
 
 Notebooks 06 (MLP), 07 (hybrid) and 08 (evaluation) read the saved predictions, so they run in a minute or two without retraining. Their optional retraining sections are switched off by default.
+
+### Leakage check: the five main chemicals
+
+The CCME score is calculated from 8 measurements, and five of them (ammonia, BOD, orthophosphate, nitrogen, nitrate) are most of the formula. We keep them out of the model inputs on purpose. `notebooks/09_leakage_check.ipynb` measures what happens if they are allowed (validation set only, same splits and tuned settings, nothing re-tuned):
+
+| Inputs | XGBoost RMSE (R²) | MLP RMSE (R²) |
+|---|---|---|
+| Our design (cheap sensors + context) | 11.20 (0.349) | 11.22 (0.346) |
+| Five chemicals only | 1.71 (0.985) | 1.89 (0.981) |
+| Our design + five chemicals | 1.32 (0.991) | 1.63 (0.986) |
+
+With the five chemicals the error falls from about 11 points to under 2, but that is the model re-learning the formula, not a better model. Both models become near-perfect, so the XGBoost versus MLP comparison would stop being informative. These inputs are also lab tests, while our inputs are cheap sensor readings. Output: `results/dl/leakage_check_validation.csv`, `results/dl/figures/five_driver_leakage_check.png`.
 
 ### Phase 2 files
 
@@ -229,6 +244,7 @@ Notebooks 06 (MLP), 07 (hybrid) and 08 (evaluation) read the saved predictions, 
 |---|---|
 | MLP | `src/train_dl.py`, `src/dl_data.py`, `src/regularisation.py`, `notebooks/06_mlp.ipynb`, `docs/architecture_dl.md`, `models/mlp.pt` |
 | Hybrid and evaluation | `src/hybrid.py`, `notebooks/07_hybrid.ipynb`, `notebooks/08_dl_evaluation.ipynb`, `docs/theory_dl.md` |
+| Leakage check | `notebooks/09_leakage_check.ipynb`, `results/dl/leakage_check_validation.csv` |
 | Ablations | `src/ablations.py`, `src/make_ablation_figures.py`, `configs/tuned_mlp.yaml`, `docs/ablation_section.md` |
 | Results | `results/dl/`, `results/hybrid_*.csv`, `results/predictions_hybrid.csv`, `results/ablations.csv` |
 

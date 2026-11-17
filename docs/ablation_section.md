@@ -46,9 +46,9 @@ The table below presents the consolidated validation performance across all abla
 | **Station History** | false (Excluded) | 8.115 [7.418, 8.989] | 11.878 [10.829, 13.124] | 0.267 [0.218, 0.306] |
 | **Country** | true (Included) [Tuned] | 7.767 [7.118, 8.503] | 11.231 [10.374, 12.216] | 0.345 [0.280, 0.396] |
 | **Country** | false (Excluded) | 8.241 [7.619, 9.008] | 11.733 [10.868, 12.761] | 0.285 [0.218, 0.337] |
-| **Model** | hybrid (PENDING: awaiting results/hybrid_val_preds.csv) | NA | NA | NA |
+| **Model** | Hybrid (55% XGBoost + 45% MLP) | 7.688 [7.045, 8.412] | 11.147 [10.286, 12.112] | 0.355 [0.289, 0.404] |
 
-*Note: The hybrid model row remains PENDING with NA metrics, awaiting out-of-fold validation predictions (`results/hybrid_val_preds.csv`). No hybrid numbers are fabricated.*
+*Note: The hybrid row is a weighted blend of the saved Phase 1 XGBoost and the tuned MLP, with the weight chosen on validation only. It needs no out-of-fold predictions. It is a different kind of change from the other rows, which alter one setting of the MLP.*
 
 ---
 
@@ -62,7 +62,7 @@ Differences below are measured against the tuned baseline (RMSE 11.231, MAE 7.76
 - **Weight decay (0.0 vs 1e-4):** Without weight decay the RMSE is 11.245 (+0.014) and the MAE is 7.803 (+0.035). The difference is negligible, so L2 shrinkage has little effect when early stopping is used.
 - **Station history (included vs excluded):** This is the largest effect in the study. Without it RMSE rises from 11.231 to 11.878 (+0.647), MAE from 7.767 to 8.115, and R² falls from 0.345 to 0.267 (-0.078). This matches Phase 1, where removing station history dropped the XGBoost R² from 0.348 to 0.271. The two intervals still overlap because they are computed separately; since both models are scored on the same stations, a paired bootstrap of the difference would be tighter and is the right test to confirm it.
 - **Country indicator (included vs excluded):** Without country, RMSE rises from 11.231 to 11.733 (+0.502), MAE from 7.767 to 8.241, and R² falls from 0.345 to 0.285 (-0.060). Phase 1 XGBoost showed a similar drop (R² 0.348 to 0.274). The same note about overlapping separate intervals applies.
-- **Model formulation (MLP vs hybrid):** The standalone tuned MLP gives R² 0.345 and RMSE 11.231. The comparison with the hybrid is pending the out-of-fold predictions (`results/hybrid_val_preds.csv`).
+- **Model formulation (MLP vs hybrid):** The standalone tuned MLP gives R² 0.345 and RMSE 11.231. The hybrid blend gives R² 0.355 and RMSE 11.147, a small improvement of about 0.08 RMSE. The intervals overlap heavily, so on validation alone this is not a clear difference; the paired test on the test set is in `notebooks/08_dl_evaluation.ipynb`.
 
 **Summary:** the inputs matter far more than the network design. Station history and country each cost clearly more than any change to depth, width, dropout or weight decay, and none of those four settings moved the result by more than about 0.14 RMSE.
 
