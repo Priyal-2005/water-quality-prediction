@@ -27,14 +27,13 @@ from __future__ import annotations
 import glob
 import math
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Tuple
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 ROOT = Path(__file__).resolve().parents[1]
 ABLATIONS_CSV = ROOT / "results" / "ablations.csv"

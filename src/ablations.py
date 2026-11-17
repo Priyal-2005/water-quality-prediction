@@ -59,7 +59,6 @@ import argparse
 import copy
 import hashlib
 import json
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,7 +71,6 @@ import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -597,14 +595,14 @@ def run_ablation(
     baseline_cfg["seed"] = seed
     cfg_hash = compute_config_hash(baseline_cfg)
 
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"Ablation Experiment: Varying '{vary}'")
     print(f"Values to test: {values}")
     print(f"Baseline Source: {baseline_cfg['source_file']}")
     print(f"Baseline Is Genuine Tuned: {is_genuine_baseline}")
     print(f"Config Hash: {cfg_hash}")
     print(f"Execution Mode: {'DRY-RUN' if dry_run else 'ACTIVE RUN'}")
-    print(f"=======================================================\n")
+    print("=======================================================\n")
 
     timestamp = datetime.now(timezone.utc).isoformat()
 

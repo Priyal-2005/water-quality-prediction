@@ -29,7 +29,7 @@ The loss is the single number training minimises.
 Training means finding weights that make the loss small.
 
 1. **Forward pass:** push a batch of rows through the layers to get predictions, then compute the loss.
-2. **Backward pass (backpropagation):** apply the chain rule from the output backwards to get the gradient of the loss with respect to every weight. Each layer reuses the gradient of the layer after it, so all 12,289 gradients cost about as much as one extra forward pass.
+2. **Backward pass (backpropagation):** apply the chain rule from the output backwards to get the gradient of the loss with respect to every weight. Each layer reuses the gradient of the layer after it, so all 12,289 gradients cost a small multiple of a forward pass (roughly twice as much), not one pass per weight.
 3. **Update:** move each weight a small step against its gradient: w <- w - eta * dL/dw, where eta is the learning rate.
 
 We do this on mini-batches of 512 rows (about 355 updates per epoch). A mini-batch gradient is a noisy but cheap estimate of the full gradient, and the noise helps escape poor spots. This is the same gradient-descent idea as in boosting, except here the steps change the weights, while XGBoost adds a tree at each step.

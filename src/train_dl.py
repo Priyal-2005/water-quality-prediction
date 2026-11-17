@@ -20,7 +20,7 @@ Outputs (results/dl/):
     mlp_history.csv            train / validation loss per epoch of the chosen model
     predictions_mlp.csv        test predictions: row_id, y_true, y_pred (scored once, later)
     predictions_mlp_val.csv    validation predictions (for choosing a hybrid blend weight)
-models/mlp.pt                  chosen weights (not committed, regenerate with this script)
+models/mlp.pt                  chosen weights (committed; regenerate with this script)
 """
 
 from __future__ import annotations
