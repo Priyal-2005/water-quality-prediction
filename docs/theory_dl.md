@@ -54,3 +54,99 @@ It also corrects these averages for the start of training. The result is that it
 "A neuron is a weighted sum plus a non-linearity. Without the non-linearity many layers collapse into one linear model, which is just Ridge. Backpropagation uses the chain rule to get every weight's gradient, and Adam uses those gradients with per-weight step sizes. We use MSE because it matches RMSE, which is how we choose the model, and we tested Huber. It lowered MAE but raised RMSE."
 
 (Sections 4.5 to 4.8: Anusha.)
+
+## 4.5 Regularisation
+
+A neural network can learn the training data too closely, including noise and patterns that do not generalise to unseen observations. Regularisation reduces this risk by discouraging unnecessarily complex solutions.
+
+Our MLP uses three regularisation techniques:
+
+- **Dropout (0.2):** During training, dropout randomly disables 20% of the hidden-layer activations. This prevents the network from relying too heavily on particular neurons and encourages it to learn more robust representations. Dropout is disabled during evaluation.
+- **Weight decay (1e-4):** We use L2-style weight regularisation through Adam's weight-decay parameter. It penalises large weights and encourages a simpler model.
+- **Early stopping:** Training monitors validation loss. If validation performance does not improve for 10 consecutive epochs, training stops and restores the best-performing model checkpoint. This avoids continuing to fit the training data after generalisation has stopped improving.
+
+Our configuration uses dropout 0.2, weight decay 0.0001 and early-stopping patience 10. Batch normalisation is disabled.
+
+These techniques address different aspects of overfitting: dropout reduces dependence between neurons, weight decay discourages large weights, and early stopping limits unnecessary training.
+
+## 4.6 Bias, variance and overfitting
+
+Bias and variance describe two different sources of prediction error.
+
+- **High bias:** A model is too simple to capture important relationships in the data. It underfits and performs poorly on both training and unseen data.
+- **High variance:** A model is too sensitive to its training observations. It may perform very well on training data but poorly on unseen data.
+- **Overfitting:** The model learns patterns specific to the training data that do not generalise reliably.
+
+We use separate validation data to monitor generalisation and select model configurations. The final test set is kept separate from model selection.
+
+Our results show why validation and test performance must both be considered. On the temporal split, the selected hybrid achieved validation RMSE of approximately 8.02 and test RMSE of approximately 7.84. This result does not by itself prove that the model has no overfitting; it shows that its performance was maintained on the later-year test period.
+
+We also examined errors by country and CCME water-quality category. This revealed that good overall performance can hide substantial subgroup errors. In particular, all three models overpredicted every polluted-water observation in the temporal test subset (766 observations with actual CCME scores below 60). This is an important limitation that aggregate metrics alone would not reveal.
+
+## 4.7 Why trees often outperform neural networks on tabular data
+
+Neural networks are powerful, but they are not automatically the best choice for structured tabular datasets.
+
+Tree-based models such as XGBoost have several advantages:
+
+- They naturally learn non-linear relationships and interactions between features.
+- They can work effectively with mixed patterns in numerical and categorical-derived features.
+- They do not require the same neural-network architecture and optimisation choices, such as layer widths, learning rates and regularisation settings.
+- They can perform strongly on datasets where useful information is already represented in engineered features.
+
+Our dataset contains structured water-quality measurements, station information, country and waterbody characteristics, and engineered features. XGBoost therefore provides a strong baseline.
+
+On the station-based validation split, XGBoost achieved RMSE 11.2048, compared with 11.2311 for the MLP. The MLP did not outperform XGBoost on this validation comparison.
+
+On the temporal validation split, XGBoost achieved RMSE 8.1267 and the MLP achieved 8.1451. Their performance was close, with XGBoost slightly ahead.
+
+These results support using XGBoost as a strong tabular-data baseline rather than assuming that a neural network must perform better simply because it is a deep-learning model.
+
+## 4.8 Hybrid models and out-of-fold predictions
+
+A hybrid model combines predictions from different model types. The motivation is that models may capture different patterns and their errors may complement one another.
+
+Our project combines XGBoost and an MLP using a weighted blend:
+
+\[
+\hat{y}_{hybrid} =
+w\hat{y}_{XGB} + (1-w)\hat{y}_{MLP}
+\]
+
+The blending weight is selected using validation data only. The selected weight is then applied to the corresponding test predictions.
+
+For the station-based split, the selected blend used 55% XGBoost and 45% MLP. For the temporal split, the selected blend used 50% XGBoost and 50% MLP. The different weights reflect the fact that the two splits represent different generalisation settings.
+
+### Why out-of-fold predictions are necessary
+
+When training a residual-learning hybrid, we first generate out-of-fold (OOF) XGBoost predictions for the training observations.
+
+We divide the training stations into five folds using GroupKFold. For each fold:
+
+1. Train XGBoost on the other four folds.
+2. Predict the observations in the held-out fold.
+3. Store those predictions in their original row positions.
+
+Every training observation therefore receives a prediction from a model that did not train on that observation.
+
+The residual target is then calculated as:
+
+\[
+r_{train} = y_{train} - \hat{y}_{XGB,OOF}
+\]
+
+A residual MLP can be trained to predict these residuals. At prediction time, the correction is added to predictions from an XGBoost model fitted on the full training split.
+
+Using in-sample XGBoost predictions to create residual targets would produce overly optimistic residuals because the model has already seen those observations. OOF predictions reduce this leakage risk.
+
+### What we found
+
+We tested both weighted blending and residual learning.
+
+Residual learning was not selected. Its validation residual corrections had very weak correlation with the actual residuals: approximately 0.0877 on the station-based split and approximately -0.0013 on the temporal split. This indicated that the residual MLP was not learning a useful correction signal.
+
+Weighted blending was therefore selected as the final hybrid approach.
+
+On the temporal test split, the hybrid achieved RMSE 7.8421, compared with 8.0605 for XGBoost and 7.8659 for the MLP. The hybrid achieved the best RMSE and R² among the three models, although the MLP achieved the lowest MAE.
+
+The hybrid therefore improved overall temporal test performance, but it did not eliminate the overprediction problem for polluted-water observations. This demonstrates why hybrid models must be evaluated using both overall metrics and subgroup error analysis.
