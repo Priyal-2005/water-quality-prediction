@@ -390,12 +390,12 @@ def make_comparison_ci_plot(
             ax.errorbar(x_pos[5], hyb_pt, yerr=[[hyb_pt - hyb_lo], [hyb_hi - hyb_pt]], fmt="none", color="black", capsize=5, lw=1.5)
             ax.text(x_pos[5], hyb_pt + 0.2, f"{hyb_pt:.3f}", ha="center", fontsize=9, fontweight="bold")
         else:
-            # Render the hybrid bar as a dashed grey bar labelled "PENDING — awaiting out-of-fold predictions"
+            # Render the hybrid bar as a dashed grey bar labelled "PENDING"
             ax.bar(x_pos[5], 7.5, color="#f8fafc", width=0.55, linestyle="--", edgecolor="#94a3b8", lw=1.8)
             ax.text(
                 x_pos[5],
                 3.75,
-                "PENDING — awaiting\nout-of-fold predictions",
+                "PENDING",
                 ha="center",
                 va="center",
                 color="#64748b",
@@ -414,7 +414,6 @@ def make_comparison_ci_plot(
         ax.text(
             0.5,
             -0.18,
-            "Hybrid bar will be populated once results/hybrid_val_preds.csv is committed.\n"
             "Station-level bootstrap 95% CIs computed across 2,000 cluster resamples of whole monitoring stations.",
             transform=ax.transAxes,
             ha="center",

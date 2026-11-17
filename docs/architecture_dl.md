@@ -44,7 +44,7 @@ input (30)  ->  Linear 30->128  -> ReLU -> Dropout 0.2
 | **MLP (this network)** | **7.767** | **11.231** | **0.345** |
 | XGBoost | 7.729 | 11.205 | 0.348 |
 
-The MLP lands between Random Forest and XGBoost on validation. The gaps are small (RMSE within 0.03), so the real comparison is the one-time test evaluation with confidence intervals (Anusha, `src/evaluate_dl.py`).
+The MLP lands between Random Forest and XGBoost on validation. The gaps are small (RMSE within 0.03), so the real comparison is the one-time test evaluation with confidence intervals (Anusha, `notebooks/08_dl_evaluation.ipynb`).
 
 ## 5. What the tuning showed
 
