@@ -258,28 +258,51 @@ def main():
         f"Test: {len(y_test):,}"
     )
 
-    # OOF predictions are generated for the training rows.
-    print("\nGenerating station-based OOF predictions...")
-    oof = oof_predictions(
-        X_train,
-        y_train,
-        groups_train,
-        n_splits=N_SPLITS,
-        seed=SEED,
+    # Reuse the saved Phase 1 XGBoost predictions so the
+    # hybrid and standalone XGBoost comparisons use the same model.
+    print("\nLoading saved Phase 1 XGBoost predictions...")
+
+    xgb_val_all = pd.read_csv(RESULT_DIR / "validation_predictions.csv")
+    xgb_test_all = pd.read_csv(RESULT_DIR / "test_predictions.csv")
+
+    xgb_val_frame = xgb_val_all.loc[
+        xgb_val_all["model"] == "XGBRegressor",
+        ["row_id", "y_true", "y_pred"],
+    ].copy()
+
+    xgb_test_frame = xgb_test_all.loc[
+        xgb_test_all["model"] == "XGBoost",
+        ["row_id", "y_true", "y_pred"],
+    ].copy()
+
+    def align_xgb(frame, expected_ids, expected_y, name):
+        if frame["row_id"].duplicated().any():
+            raise ValueError(f"{name}: duplicate row IDs")
+
+        aligned = pd.DataFrame({"row_id": expected_ids}).merge(
+            frame,
+            on="row_id",
+            how="left",
+            validate="one_to_one",
+            sort=False,
+        )
+
+        if aligned.isna().any().any():
+            raise ValueError(f"{name}: missing or unaligned predictions")
+
+        if not np.allclose(aligned["y_true"], expected_y):
+            raise ValueError(f"{name}: target values do not match dataset")
+
+        return aligned["y_pred"].to_numpy(dtype=float)
+
+    xgb_val = align_xgb(
+        xgb_val_frame, val_ids, y_val, "Phase 1 XGBoost validation"
+    )
+    xgb_test = align_xgb(
+        xgb_test_frame, test_ids, y_test, "Phase 1 XGBoost test"
     )
 
-    print(
-        "OOF metrics:",
-        evaluate_predictions(y_train, oof),
-    )
-
-    # Fit final XGBoost using all training rows.
-    print("\nFitting final XGBoost model...")
-    xgb_model = make_xgb_pipeline()
-    xgb_model.fit(X_train, y_train)
-
-    xgb_val = xgb_model.predict(X_val)
-    xgb_test = xgb_model.predict(X_test)
+    print("Loaded and verified saved Phase 1 XGBoost predictions.")
 
     # Reuse the committed MLP predictions from Phase 2.
     print("\nLoading committed MLP predictions...")

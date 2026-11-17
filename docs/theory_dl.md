@@ -106,7 +106,11 @@ These results support using XGBoost as a strong tabular-data baseline rather tha
 
 A hybrid model combines predictions from different model types. The motivation is that models may capture different patterns and their errors may complement one another.
 
-Our project combines XGBoost and an MLP using a weighted blend:
+Our project investigated two approaches for combining XGBoost and an MLP: weighted blending and residual learning.
+
+The final selected approach is weighted blending, where predictions from the Phase 1 XGBoost model and the trained MLP are combined using a weight selected on validation data only.
+
+Out-of-fold (OOF) XGBoost predictions were used specifically to construct training residual targets for the separate residual-learning experiment. They were not required for the final weighted-blending pipeline.
 
 \[
 \hat{y}_{hybrid} =
