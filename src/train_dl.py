@@ -5,7 +5,7 @@ Train and tune the Phase 2 MLP (PyTorch) on the same data, splits and inputs as 
 Rules (same as Phase 1):
   * every setting is chosen on VALIDATION RMSE only;
   * the test set is never scored here. Test predictions are only saved to disk so that
-    the one-time evaluation (src/evaluate_dl.py) can score them once.
+    the one-time evaluation (notebooks/08_dl_evaluation.ipynb) can score them once.
 
 Regularisation switches (dropout, weight decay, early stopping, batch norm) are read from
 src/regularisation.py, so ablations can change them one at a time.
@@ -20,7 +20,7 @@ Outputs (results/dl/):
     mlp_history.csv            train / validation loss per epoch of the chosen model
     predictions_mlp.csv        test predictions: row_id, y_true, y_pred (scored once, later)
     predictions_mlp_val.csv    validation predictions (for choosing a hybrid blend weight)
-models/mlp.pt                  chosen weights (not committed, regenerate with this script)
+models/mlp.pt                  chosen weights (committed; regenerate with this script)
 """
 
 from __future__ import annotations
@@ -208,7 +208,7 @@ def main():
     pd.DataFrame({"row_id": data["row_id_val"], "y_true": data["y_val"],
                   "y_pred": predict(model, data["X_val"], best["y_mean"], best["y_std"])}
                  ).to_csv(RESULT_DIR / "predictions_mlp_val.csv", index=False)
-    # Test predictions are saved but NOT scored here (the test set is used once, in evaluate_dl.py).
+    # Test predictions are saved but NOT scored here (the test set is used once, in notebooks/08_dl_evaluation.ipynb).
     pd.DataFrame({"row_id": data["row_id_test"], "y_true": data["y_test"],
                   "y_pred": predict(model, data["X_test"], best["y_mean"], best["y_std"])}
                  ).to_csv(RESULT_DIR / "predictions_mlp.csv", index=False)

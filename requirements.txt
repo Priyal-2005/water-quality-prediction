@@ -11,6 +11,5 @@ seaborn==0.13.2
 joblib==1.6.0
 jupyter==1.1.1
 
-# Phase 2 (DL). Lower bound only for now: after installing, run `pip freeze | grep -i torch`
-# and replace this line with the exact pinned version (check it supports your Python version).
-torch>=2.5
+# Phase 2 (DL)
+torch==2.10.0

@@ -29,7 +29,7 @@ The loss is the single number training minimises.
 Training means finding weights that make the loss small.
 
 1. **Forward pass:** push a batch of rows through the layers to get predictions, then compute the loss.
-2. **Backward pass (backpropagation):** apply the chain rule from the output backwards to get the gradient of the loss with respect to every weight. Each layer reuses the gradient of the layer after it, so all 12,289 gradients cost about as much as one extra forward pass.
+2. **Backward pass (backpropagation):** apply the chain rule from the output backwards to get the gradient of the loss with respect to every weight. Each layer reuses the gradient of the layer after it, so all 12,289 gradients cost a small multiple of a forward pass (roughly twice as much), not one pass per weight.
 3. **Update:** move each weight a small step against its gradient: w <- w - eta * dL/dw, where eta is the learning rate.
 
 We do this on mini-batches of 512 rows (about 355 updates per epoch). A mini-batch gradient is a noisy but cheap estimate of the full gradient, and the noise helps escape poor spots. This is the same gradient-descent idea as in boosting, except here the steps change the weights, while XGBoost adds a tree at each step.
@@ -117,31 +117,29 @@ Out-of-fold (OOF) XGBoost predictions were used specifically to construct traini
 w\hat{y}_{XGB} + (1-w)\hat{y}_{MLP}
 \]
 
-The blending weight is selected using validation data only. The selected weight is then applied to the corresponding test predictions.
+The blending weight is selected using validation data only. The selected weight is then applied to the corresponding test predictions. Neither model is fitted on validation rows, so ordinary validation predictions are enough to choose the weight. Out-of-fold predictions are **not** used for the weighted blend.
 
 For the station-based split, the selected blend used 55% XGBoost and 45% MLP. For the temporal split, the selected blend used 50% XGBoost and 50% MLP. The different weights reflect the fact that the two splits represent different generalisation settings.
 
-### Why out-of-fold predictions are necessary
+### When out-of-fold predictions are needed (residual learning only)
 
-When training a residual-learning hybrid, we first generate out-of-fold (OOF) XGBoost predictions for the training observations.
+Out-of-fold (OOF) predictions are needed for a different hybrid, residual learning, where a second model is trained on the training rows to predict XGBoost's remaining error. We tried it and did not select it, so it is not part of the final hybrid.
 
-We divide the training stations into five folds using GroupKFold. For each fold:
+For the residual model we need XGBoost errors on the training rows that are not unrealistically small. XGBoost has already seen those rows, so its in-sample predictions are too good. We therefore:
 
-1. Train XGBoost on the other four folds.
-2. Predict the observations in the held-out fold.
+1. Divide the training stations into five folds using GroupKFold.
+2. For each fold, train XGBoost on the other four folds and predict the held-out fold.
 3. Store those predictions in their original row positions.
 
-Every training observation therefore receives a prediction from a model that did not train on that observation.
-
-The residual target is then calculated as:
+Every training row then receives a prediction from a model that did not train on it, and the residual target is
 
 \[
 r_{train} = y_{train} - \hat{y}_{XGB,OOF}
 \]
 
-A residual MLP can be trained to predict these residuals. At prediction time, the correction is added to predictions from an XGBoost model fitted on the full training split.
+A residual MLP is trained to predict these residuals. At prediction time, its correction is added to predictions from an XGBoost model fitted on the full training split.
 
-Using in-sample XGBoost predictions to create residual targets would produce overly optimistic residuals because the model has already seen those observations. OOF predictions reduce this leakage risk.
+A weighted blend does not need this step, because the blend weight is chosen on validation rows that neither model was fitted on.
 
 ### What we found
 
@@ -149,8 +147,26 @@ We tested both weighted blending and residual learning.
 
 Residual learning was not selected. Its validation residual corrections had very weak correlation with the actual residuals: approximately 0.0877 on the station-based split and approximately -0.0013 on the temporal split. This indicated that the residual MLP was not learning a useful correction signal.
 
-Weighted blending was therefore selected as the final hybrid approach.
+Weighted blending was therefore selected as the final hybrid approach. It uses the Phase 1 saved XGBoost predictions and the saved MLP predictions, with the weight chosen on validation.
 
-On the temporal test split, the hybrid achieved RMSE 7.8421, compared with 8.0605 for XGBoost and 7.8659 for the MLP. The hybrid achieved the best RMSE and R² among the three models, although the MLP achieved the lowest MAE.
+**Station-based split (main result).** The test set was scored once, with 95% station-bootstrap confidence intervals (2,000 draws) and paired differences (notebook 08).
 
-The hybrid therefore improved overall temporal test performance, but it did not eliminate the overprediction problem for polluted-water observations. This demonstrates why hybrid models must be evaluated using both overall metrics and subgroup error analysis.
+| Model | Test RMSE | Test MAE | Test R² |
+|---|---|---|---|
+| XGBoost | 11.058 | 7.543 | 0.293 |
+| MLP | 11.108 | 7.606 | 0.287 |
+| Hybrid | 11.010 | 7.521 | 0.300 |
+
+| Paired RMSE difference | Value | 95% CI | CI excludes 0? |
+|---|---|---|---|
+| MLP minus XGBoost | +0.049 | [-0.053, 0.147] | No |
+| Hybrid minus XGBoost | -0.049 | [-0.098, -0.002] | Yes, barely |
+| Hybrid minus MLP | -0.098 | [-0.150, -0.043] | Yes |
+
+- The MLP and XGBoost cannot be separated on the test stations.
+- The hybrid beats the MLP clearly.
+- The hybrid's gain over XGBoost is about 0.05 RMSE (0.4%), and its interval only just excludes zero. We describe it as a small gain, not a large improvement.
+
+**Temporal split (secondary check).** On the temporal test split, the hybrid achieved RMSE 7.8421, compared with 8.0605 for XGBoost and 7.8659 for the MLP. The hybrid achieved the best RMSE and R² among the three models, although the MLP achieved the lowest MAE. This is a single split without confidence intervals, so it is supporting evidence only.
+
+The hybrid therefore gave a small overall improvement, but it did not eliminate the overprediction problem for polluted-water observations: all three models predict about 80 where the true CCME value averages about 50. This demonstrates why hybrid models must be evaluated using both overall metrics and subgroup error analysis.

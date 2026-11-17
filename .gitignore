@@ -26,9 +26,10 @@ data/raw/*
 # trains on identical data. If a file gets bigger than ~50 MB, ignore it too.
 
 # --- Models ---
-# Saved models can be regenerated with src/train.py
+# The tuned MLP (models/mlp.pt, 52 KB) is kept in git; other models can be regenerated with src/train.py and src/train_dl.py
 models/*
 !models/.gitkeep
+# !models/mlp.pt
 
 # --- LaTeX build files (keep the .tex and .bib, not the build output) ---
 report/*.aux

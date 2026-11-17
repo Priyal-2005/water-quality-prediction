@@ -59,7 +59,6 @@ import argparse
 import copy
 import hashlib
 import json
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,7 +71,6 @@ import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -476,7 +474,7 @@ def evaluate_hybrid_validation(
     hybrid_path: Path = HYBRID_PREDS_PATH,
 ) -> Tuple[Optional[Dict[str, float]], str, str]:
     """
-    Read and verify out-of-fold-by-station validation predictions for XGBoost+MLP hybrid.
+    Read and verify the validation predictions of the XGBoost+MLP weighted-blend hybrid.
     Computes station-level bootstrap 95% CIs across monitoring stations.
     Returns:
         (metrics_dict_or_None, status, notes)
@@ -485,7 +483,7 @@ def evaluate_hybrid_validation(
         return (
             None,
             "PLACEHOLDER",
-            "Placeholder: out-of-fold hybrid validation predictions not yet available (results/hybrid_val_preds.csv missing).",
+            "Placeholder: hybrid validation predictions not yet available (results/hybrid_val_preds.csv missing).",
         )
 
     try:
@@ -524,7 +522,7 @@ def evaluate_hybrid_validation(
             "rmse": rmse_pt, "rmse_lo": rmse_lo, "rmse_hi": rmse_hi,
             "r2": r2_pt, "r2_lo": r2_lo, "r2_hi": r2_hi,
         }
-        return metrics, "RUN", "Genuine out-of-fold station hybrid predictions verified with 95% station CIs."
+        return metrics, "RUN", "Hybrid validation predictions verified (weighted blend, weight chosen on validation) with 95% station CIs."
 
     except Exception as e:
         return (
@@ -597,14 +595,14 @@ def run_ablation(
     baseline_cfg["seed"] = seed
     cfg_hash = compute_config_hash(baseline_cfg)
 
-    print(f"\n=======================================================")
+    print("\n=======================================================")
     print(f"Ablation Experiment: Varying '{vary}'")
     print(f"Values to test: {values}")
     print(f"Baseline Source: {baseline_cfg['source_file']}")
     print(f"Baseline Is Genuine Tuned: {is_genuine_baseline}")
     print(f"Config Hash: {cfg_hash}")
     print(f"Execution Mode: {'DRY-RUN' if dry_run else 'ACTIVE RUN'}")
-    print(f"=======================================================\n")
+    print("=======================================================\n")
 
     timestamp = datetime.now(timezone.utc).isoformat()
 

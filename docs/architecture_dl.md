@@ -44,10 +44,11 @@ input (30)  ->  Linear 30->128  -> ReLU -> Dropout 0.2
 | **MLP (this network)** | **7.767** | **11.231** | **0.345** |
 | XGBoost | 7.729 | 11.205 | 0.348 |
 
-The MLP lands between Random Forest and XGBoost on validation. The gaps are small (RMSE within 0.03), so the real comparison is the one-time test evaluation with confidence intervals (Anusha, `src/evaluate_dl.py`).
+The MLP lands between Random Forest and XGBoost on validation. The gaps are small (RMSE within 0.03), so the real comparison is the one-time test evaluation with confidence intervals (Anusha, `notebooks/08_dl_evaluation.ipynb`). On the unseen test stations the MLP and XGBoost cannot be separated (test RMSE 11.108 vs 11.058, paired difference +0.049, 95% CI [-0.053, 0.147]).
 
 ## 5. What the tuning showed
 
 - 12 of 13 trials landed within RMSE 11.23 to 11.41 (the worst was 11.59). The default setting was the best. The network is not very sensitive to depth, width or learning rate, which suggests the limit is the information in the 14 inputs, not the model.
 - Early stopping mattered: validation loss stopped improving after about epoch 19 while training loss kept falling, which is the start of overfitting.
-- Limitation: 13 random trials is a small search, and the winner is the default setting, so we have not shown that tuning cannot help. Ablations (Sarthak) test one factor at a time.
+- Limitation: 13 random trials is a small search, and the winner is the default setting, so we have not shown that tuning cannot help. Ablations (Sarthak) test one factor at a time (`docs/ablation_section.md`, `results/ablations.csv`).
+- Ablation evidence: changing depth, width, dropout or weight decay made no clear difference (validation RMSE 11.23 to 11.37, confidence intervals overlap). Removing station history (RMSE 11.878) or country (11.733) hurt most (the separate intervals still overlap, so a paired test would be needed to confirm it), which suggests the inputs matter more than the architecture.

@@ -1,38 +1,36 @@
-
 """
-Reusable XGBoost + MLP hybrid pipeline.
+XGBoost + MLP hybrid pipeline (weighted prediction blending).
 
-Selected approach: weighted prediction blending.
-Residual learning was investigated separately in notebook 07
-and was not selected because its validation corrections had
-very weak predictive signal.
+Selected approach: a weighted blend of the saved Phase 1 XGBoost predictions
+and the saved Phase 2 MLP predictions, with the blend weight chosen on the
+validation set only. Both inputs are predictions from models trained on the
+training rows only, so no out-of-fold step is needed for the blend.
+
+Out-of-fold (OOF) XGBoost predictions are needed only for the residual-learning
+variant (an MLP trained on y - XGBoost prediction). That variant was tested in
+notebook 07 and not selected (its corrections had almost no predictive signal).
+`oof_predictions` is kept for it; run it with `--oof` as a diagnostic.
 
 Run from the project root:
-    python -m src.hybrid
+    python -m src.hybrid            # build the blend from saved predictions
+    python -m src.hybrid --oof      # also run the station-grouped OOF diagnostic
+
+No test metrics are calculated here. The test set is scored once, in
+`notebooks/08_dl_evaluation.ipynb`.
 """
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import GroupKFold
-from sklearn.pipeline import Pipeline
 from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
     r2_score,
-)
-
-from xgboost import XGBRegressor
-
-from src.features import (
-    build_preprocessor,
-    get_xy,
-    load_final_dataset,
-    make_features,
 )
 
 
@@ -44,13 +42,21 @@ DL_RESULT_DIR = RESULT_DIR / "dl"
 SEED = 42
 N_SPLITS = 5
 
+# Phase 1 saved XGBoost predictions (the same predictions the Phase 1 results use).
+XGB_VAL_PATH = RESULT_DIR / "validation_predictions.csv"
+XGB_TEST_PATH = RESULT_DIR / "test_predictions.csv"
+XGB_VAL_NAME = "XGBRegressor"   # model name in validation_predictions.csv
+XGB_TEST_NAME = "XGBoost"       # model name in test_predictions.csv
+
 
 # ---------------------------------------------------------
-# 1. XGBoost model
+# 1. XGBoost model (only needed for the OOF / residual variant)
 # ---------------------------------------------------------
 
 def make_xgb():
     """Create XGBoost using the selected Phase 1 parameters."""
+    from xgboost import XGBRegressor
+
     return XGBRegressor(
         objective="reg:squarederror",
         n_estimators=300,
@@ -68,6 +74,9 @@ def make_xgb():
 
 def make_xgb_pipeline():
     """Create a preprocessing + XGBoost pipeline."""
+    from sklearn.pipeline import Pipeline
+    from src.features import build_preprocessor
+
     return Pipeline([
         ("preprocessor", build_preprocessor(scale=False)),
         ("model", make_xgb()),
@@ -75,7 +84,7 @@ def make_xgb_pipeline():
 
 
 # ---------------------------------------------------------
-# 2. Out-of-fold predictions
+# 2. Out-of-fold predictions (needed for the residual variant only)
 # ---------------------------------------------------------
 
 def oof_predictions(X, y, groups, n_splits=5, seed=42):
@@ -85,7 +94,13 @@ def oof_predictions(X, y, groups, n_splits=5, seed=42):
     Each validation fold contains stations not used to train
     that fold's model. Preprocessing is fitted separately
     inside each fold to prevent preprocessing leakage.
+
+    These predictions are required when XGBoost predictions on the TRAINING
+    rows are used as inputs or residual targets for a second model. The
+    weighted blend does not need them.
     """
+    from sklearn.model_selection import GroupKFold
+
     X = X.reset_index(drop=True)
     y = np.asarray(y)
     groups = np.asarray(groups)
@@ -103,17 +118,10 @@ def oof_predictions(X, y, groups, n_splits=5, seed=42):
         splitter.split(X, y, groups), start=1
     ):
         model = make_xgb_pipeline()
-
-        model.fit(
-            X.iloc[train_idx],
-            y[train_idx],
-        )
-
+        model.fit(X.iloc[train_idx], y[train_idx])
         oof[valid_idx] = model.predict(X.iloc[valid_idx])
 
-        fold_rmse = np.sqrt(
-            mean_squared_error(y[valid_idx], oof[valid_idx])
-        )
+        fold_rmse = np.sqrt(mean_squared_error(y[valid_idx], oof[valid_idx]))
         print(f"OOF fold {fold}/{n_splits}: RMSE = {fold_rmse:.4f}")
 
     if np.isnan(oof).any():
@@ -137,14 +145,11 @@ def blend_predictions(xgb_pred, mlp_pred, xgb_weight=0.55):
     if not 0 <= xgb_weight <= 1:
         raise ValueError("xgb_weight must be between 0 and 1.")
 
-    return (
-        xgb_weight * xgb_pred
-        + (1 - xgb_weight) * mlp_pred
-    )
+    return xgb_weight * xgb_pred + (1 - xgb_weight) * mlp_pred
 
 
 def clip_predictions(predictions, lower=0, upper=100):
-    """Keep predicted CCME values within the valid 0–100 range."""
+    """Keep predicted CCME values within the valid 0-100 range."""
     return np.clip(np.asarray(predictions), lower, upper)
 
 
@@ -157,33 +162,17 @@ def evaluate_predictions(y_true, predictions):
     }
 
 
-def select_blend_weight(
-    y_true,
-    xgb_pred,
-    mlp_pred,
-    weights=None,
-    clip=True,
-):
-    """
-    Select the XGBoost weight using validation RMSE only.
-    """
+def select_blend_weight(y_true, xgb_pred, mlp_pred, weights=None, clip=True):
+    """Select the XGBoost weight using validation RMSE only."""
     if weights is None:
         weights = np.arange(0, 1.001, 0.05)
 
     rows = []
-
     for weight in weights:
-        prediction = blend_predictions(
-            xgb_pred,
-            mlp_pred,
-            xgb_weight=float(weight),
-        )
-
+        prediction = blend_predictions(xgb_pred, mlp_pred, xgb_weight=float(weight))
         if clip:
             prediction = clip_predictions(prediction)
-
         metrics = evaluate_predictions(y_true, prediction)
-
         rows.append({
             "xgb_weight": float(weight),
             "mlp_weight": float(1 - weight),
@@ -192,21 +181,29 @@ def select_blend_weight(
 
     results = pd.DataFrame(rows)
     best = results.loc[results["rmse"].idxmin()]
-
     return float(best["xgb_weight"]), results
 
 
 # ---------------------------------------------------------
-# 4. Prediction alignment
+# 4. Loading saved predictions, aligned by original row ID
 # ---------------------------------------------------------
 
-def load_mlp_predictions(path, expected_row_ids):
-    """Load committed MLP predictions and align by original row ID."""
+def load_saved_predictions(path, expected_row_ids, model=None):
+    """
+    Load saved predictions and align them to `expected_row_ids` by row ID.
+    If `model` is given, keep only that model's rows (Phase 1 files hold
+    several models).
+    """
     predictions = pd.read_csv(path)
 
     required = {"row_id", "y_pred"}
     if not required.issubset(predictions.columns):
         raise ValueError(f"{path} must contain {required}.")
+
+    if model is not None:
+        predictions = predictions[predictions["model"] == model]
+        if predictions.empty:
+            raise ValueError(f"No rows for model '{model}' in {path}.")
 
     if predictions["row_id"].duplicated().any():
         raise ValueError(f"Duplicate row IDs found in {path}.")
@@ -219,7 +216,7 @@ def load_mlp_predictions(path, expected_row_ids):
     )
 
     if aligned["y_pred"].isna().any():
-        raise ValueError(f"Missing MLP predictions while aligning {path}.")
+        raise ValueError(f"Missing predictions while aligning {path}.")
 
     return aligned["y_pred"].to_numpy(dtype=float)
 
@@ -228,158 +225,82 @@ def load_mlp_predictions(path, expected_row_ids):
 # 5. Main station-split hybrid workflow
 # ---------------------------------------------------------
 
-def main():
+def main(run_oof: bool = False):
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
 
-    print("Loading and engineering dataset...")
-    df = make_features(load_final_dataset(str(DATA_PATH)))
+    # Row IDs and validation targets come from the saved MLP prediction files,
+    # so the hybrid is aligned to exactly the rows the MLP was scored on.
+    mlp_val_file = pd.read_csv(DL_RESULT_DIR / "predictions_mlp_val.csv")
+    mlp_test_file = pd.read_csv(DL_RESULT_DIR / "predictions_mlp.csv")
 
-    X_train, y_train, X_val, y_val, X_test, y_test = get_xy(
-        df, split_col="split"
-    )
+    val_ids = mlp_val_file["row_id"].to_numpy()
+    test_ids = mlp_test_file["row_id"].to_numpy()
+    y_val = mlp_val_file["y_true"].to_numpy(dtype=float)
 
-    y_train = y_train.to_numpy()
-    y_val = y_val.to_numpy()
-    y_test = y_test.to_numpy()
+    print(f"Validation rows: {len(val_ids):,} | Test rows: {len(test_ids):,}")
 
-    train_rows = df.loc[X_train.index]
-    val_rows = df.loc[X_val.index]
-    test_rows = df.loc[X_test.index]
+    # Saved predictions from models trained on the training rows only.
+    xgb_val = load_saved_predictions(XGB_VAL_PATH, val_ids, model=XGB_VAL_NAME)
+    xgb_test = load_saved_predictions(XGB_TEST_PATH, test_ids, model=XGB_TEST_NAME)
+    mlp_val = load_saved_predictions(DL_RESULT_DIR / "predictions_mlp_val.csv", val_ids)
+    mlp_test = load_saved_predictions(DL_RESULT_DIR / "predictions_mlp.csv", test_ids)
 
-    train_ids = train_rows["row_id"].to_numpy()
-    val_ids = val_rows["row_id"].to_numpy()
-    test_ids = test_rows["row_id"].to_numpy()
-
-    groups_train = train_rows["site_id"].to_numpy()
-
-    print(
-        f"Train: {len(y_train):,} | "
-        f"Validation: {len(y_val):,} | "
-        f"Test: {len(y_test):,}"
-    )
-
-    # Reuse the saved Phase 1 XGBoost predictions so the
-    # hybrid and standalone XGBoost comparisons use the same model.
-    print("\nLoading saved Phase 1 XGBoost predictions...")
-
-    xgb_val_all = pd.read_csv(RESULT_DIR / "validation_predictions.csv")
-    xgb_test_all = pd.read_csv(RESULT_DIR / "test_predictions.csv")
-
-    xgb_val_frame = xgb_val_all.loc[
-        xgb_val_all["model"] == "XGBRegressor",
-        ["row_id", "y_true", "y_pred"],
-    ].copy()
-
-    xgb_test_frame = xgb_test_all.loc[
-        xgb_test_all["model"] == "XGBoost",
-        ["row_id", "y_true", "y_pred"],
-    ].copy()
-
-    def align_xgb(frame, expected_ids, expected_y, name):
-        if frame["row_id"].duplicated().any():
-            raise ValueError(f"{name}: duplicate row IDs")
-
-        aligned = pd.DataFrame({"row_id": expected_ids}).merge(
-            frame,
-            on="row_id",
-            how="left",
-            validate="one_to_one",
-            sort=False,
-        )
-
-        if aligned.isna().any().any():
-            raise ValueError(f"{name}: missing or unaligned predictions")
-
-        if not np.allclose(aligned["y_true"], expected_y):
-            raise ValueError(f"{name}: target values do not match dataset")
-
-        return aligned["y_pred"].to_numpy(dtype=float)
-
-    xgb_val = align_xgb(
-        xgb_val_frame, val_ids, y_val, "Phase 1 XGBoost validation"
-    )
-    xgb_test = align_xgb(
-        xgb_test_frame, test_ids, y_test, "Phase 1 XGBoost test"
-    )
-
-    print("Loaded and verified saved Phase 1 XGBoost predictions.")
-
-    # Reuse the committed MLP predictions from Phase 2.
-    print("\nLoading committed MLP predictions...")
-    mlp_val = load_mlp_predictions(
-        DL_RESULT_DIR / "predictions_mlp_val.csv",
-        val_ids,
-    )
-
-    mlp_test = load_mlp_predictions(
-        DL_RESULT_DIR / "predictions_mlp.csv",
-        test_ids,
-    )
+    print("Validation XGBoost (Phase 1 saved):", evaluate_predictions(y_val, xgb_val))
+    print("Validation MLP (saved):", evaluate_predictions(y_val, mlp_val))
 
     # Select blend weight using validation data only.
-    print("\nSelecting blend weight using validation RMSE...")
     best_weight, weight_results = select_blend_weight(
-        y_val,
-        xgb_val,
-        mlp_val,
-        clip=True,
+        y_val, xgb_val, mlp_val, clip=True
     )
+    print(f"\nSelected weights: XGBoost={best_weight:.2f}, MLP={1 - best_weight:.2f}")
 
-    mlp_weight = 1 - best_weight
+    weight_results.to_csv(RESULT_DIR / "hybrid_blend_weights.csv", index=False)
 
-    print(
-        f"Selected weights: XGBoost={best_weight:.2f}, "
-        f"MLP={mlp_weight:.2f}"
-    )
+    hybrid_val = clip_predictions(blend_predictions(xgb_val, mlp_val, best_weight))
 
-    weight_results.to_csv(
-        RESULT_DIR / "hybrid_blend_weights.csv",
-        index=False,
-    )
-
-    # Validation predictions.
-    hybrid_val = clip_predictions(
-        blend_predictions(xgb_val, mlp_val, best_weight)
-    )
-
-    val_output = pd.DataFrame({
+    pd.DataFrame({
         "row_id": val_ids,
         "y_true": y_val,
         "y_pred": hybrid_val,
         "xgb_pred": xgb_val,
         "mlp_pred": mlp_val,
         "blend_pred": hybrid_val,
-    })
+    }).to_csv(RESULT_DIR / "hybrid_val_preds.csv", index=False)
 
-    val_output.to_csv(
-        RESULT_DIR / "hybrid_val_preds.csv",
-        index=False,
-    )
+    print("Validation hybrid metrics:", evaluate_predictions(y_val, hybrid_val))
 
-    print("\nValidation hybrid metrics:")
-    print(evaluate_predictions(y_val, hybrid_val))
-
-    # Test predictions are generated only after validation selection.
-    # No test metrics are calculated in this script.
-    hybrid_test = clip_predictions(
-        blend_predictions(xgb_test, mlp_test, best_weight)
-    )
-
-    test_output = pd.DataFrame({
-    "row_id": test_ids,
-    "y_pred": hybrid_test,
-})
-
-    test_output.to_csv(
-        RESULT_DIR / "predictions_hybrid.csv",
-        index=False,
+    # Test predictions use the validation-selected weight. They are saved but
+    # NOT scored here.
+    hybrid_test = clip_predictions(blend_predictions(xgb_test, mlp_test, best_weight))
+    pd.DataFrame({"row_id": test_ids, "y_pred": hybrid_test}).to_csv(
+        RESULT_DIR / "predictions_hybrid.csv", index=False
     )
 
     print("\nSaved:")
+    print(RESULT_DIR / "hybrid_blend_weights.csv")
     print(RESULT_DIR / "hybrid_val_preds.csv")
     print(RESULT_DIR / "predictions_hybrid.csv")
-    print("\nTest predictions saved without scoring the test set.")
+    print("Test predictions saved without scoring the test set.")
+
+    if run_oof:
+        # Diagnostic needed only for the residual-learning variant.
+        from src.features import get_xy, load_final_dataset, make_features
+
+        print("\nRunning station-grouped OOF diagnostic (residual variant only)...")
+        df = make_features(load_final_dataset(str(DATA_PATH)))
+        X_train, y_train, *_ = get_xy(df, split_col="split")
+        groups_train = df.loc[X_train.index, "site_id"].to_numpy()
+        oof = oof_predictions(
+            X_train, y_train.to_numpy(), groups_train,
+            n_splits=N_SPLITS, seed=SEED,
+        )
+        print("OOF metrics:", evaluate_predictions(y_train.to_numpy(), oof))
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
+    parser.add_argument(
+        "--oof", action="store_true",
+        help="Also run the station-grouped OOF XGBoost diagnostic (needs xgboost).",
+    )
+    main(run_oof=parser.parse_args().oof)
