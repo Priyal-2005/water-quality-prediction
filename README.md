@@ -226,6 +226,8 @@ python -m src.hybrid                   # add --oof for the residual-variant diag
 
 Notebooks 06 (MLP), 07 (hybrid) and 08 (evaluation) read the saved predictions, so they run in a minute or two without retraining. Their optional retraining sections are switched off by default.
 
+**Status of the optional retraining sections.** The two off-by-default sections, the residual-learning experiment in notebook 07 and `RUN_YEAR_SPLIT_TRAINING` in notebook 08, have not been re-run since the saved predictions were produced. Every number reported here comes from those saved prediction files, so re-running the sections would only be extra assurance that they still reproduce; it would not change any reported result.
+
 ### Leakage check: the five main chemicals
 
 The CCME score is calculated from 8 measurements, and five of them (ammonia, BOD, orthophosphate, nitrogen, nitrate) are most of the formula. We keep them out of the model inputs on purpose. `notebooks/09_leakage_check.ipynb` measures what happens if they are allowed (validation set only, same splits and tuned settings, nothing re-tuned):
@@ -256,4 +258,5 @@ With the five chemicals the error falls from about 11 points to under 2, but tha
 - 13 tuning trials is a small search, and the tuned setting is the default.
 - Ablation intervals are computed separately and overlap; a paired bootstrap would be the right test to confirm the station-history and country effects.
 - The year-split result is a single split without confidence intervals.
+- The optional retraining sections in notebooks 07 and 08 have not been re-run against the saved predictions; this is pending assurance only, not a gap in the reported results.
 - Over-prediction on polluted water remains for every model.
