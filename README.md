@@ -226,7 +226,17 @@ python -m src.hybrid                   # add --oof for the residual-variant diag
 
 Notebooks 06 (MLP), 07 (hybrid) and 08 (evaluation) read the saved predictions, so they run in a minute or two without retraining. Their optional retraining sections are switched off by default.
 
-**Status of the optional retraining sections.** The two off-by-default sections, the residual-learning experiment in notebook 07 and `RUN_YEAR_SPLIT_TRAINING` in notebook 08, have not been re-run since the saved predictions were produced. Every number reported here comes from those saved prediction files, so re-running the sections would only be extra assurance that they still reproduce; it would not change any reported result.
+**The optional retraining sections have been re-run and reproduce the saved results** (checked 21 November 2026). All three were executed with their flags switched on:
+
+| Section | Re-run result | Saved / documented | Agreement |
+|---|---|---|---|
+| `RUN_YEAR_SPLIT_TRAINING` (08) | test RMSE 8.060546 / 7.865906 / 7.842071 (XGBoost / MLP / hybrid) | same | 7 decimal places |
+| `RUN_RESIDUAL_DIAGNOSTIC` (08) | year-split residual correlation −0.0013 | −0.0013 | matches |
+| `RUN_RESIDUAL_EXPERIMENT` (07) | station-split residual correlation 0.0877 | 0.0877 | matches |
+
+The saved prediction files were left unchanged: the largest difference anywhere in `results/` was 4e-06, which is float32 rounding. The re-run used torch 2.15.0 while `requirements.txt` pins 2.10.0, and that made no material difference.
+
+One fix was needed to make notebook 07's section runnable. It raised `NameError: name 'X_res_train' is not defined`, because the lines that build the residual MLP's scaled feature matrices were missing from the saved notebook (they had only ever existed in a live kernel). Those lines are restored, and the section now reproduces the 0.0877 correlation documented in `docs/theory_dl.md`. The flags stay off by default, as the sections take a few minutes and the reported numbers come from the saved files.
 
 ### Leakage check: the five main chemicals
 
@@ -258,5 +268,4 @@ With the five chemicals the error falls from about 11 points to under 2, but tha
 - 13 tuning trials is a small search, and the tuned setting is the default.
 - Ablation intervals are computed separately and overlap; a paired bootstrap would be the right test to confirm the station-history and country effects.
 - The year-split result is a single split without confidence intervals.
-- The optional retraining sections in notebooks 07 and 08 have not been re-run against the saved predictions; this is pending assurance only, not a gap in the reported results.
 - Over-prediction on polluted water remains for every model.
