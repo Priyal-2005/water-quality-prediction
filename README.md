@@ -247,6 +247,8 @@ With the five chemicals the error falls from about 11 points to under 2, but tha
 | Leakage check | `notebooks/09_leakage_check.ipynb`, `results/dl/leakage_check_validation.csv` |
 | Ablations | `src/ablations.py`, `src/make_ablation_figures.py`, `configs/tuned_mlp.yaml`, `docs/ablation_section.md` |
 | Results | `results/dl/`, `results/hybrid_*.csv`, `results/predictions_hybrid.csv`, `results/ablations.csv` |
+| Literature review (Phase 2) | `docs/literature_review_dl.md` |
+| Report (Phase 2, IEEE) | `report/main_phase2.tex`, `report/references_phase2.bib`, `report/Water_Quality_Prediction_Phase2_Report.pdf` |
 
 ### Phase 2 limitations
 
